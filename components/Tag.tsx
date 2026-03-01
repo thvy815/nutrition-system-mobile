@@ -28,10 +28,10 @@ export function Tag({ label, variant = 'primary' }: TagProps) {
 
 export function GoalTag({ goal }: { goal: HealthGoal }) {
   const labels: Record<HealthGoal, string> = {
-    lose_weight: 'Lose Weight',
-    gain_weight: 'Gain Weight',
-    maintain: 'Maintain',
-    build_muscle: 'Build Muscle',
+    lose_weight: 'Giảm cân',
+    gain_weight: 'Tăng cân',
+    maintain: 'Duy trì',
+    build_muscle: 'Tăng cơ',
   };
   return <Tag label={labels[goal]} variant="primary" />;
 }
@@ -43,9 +43,9 @@ export function DifficultyTag({ level }: { level: DifficultyLevel }) {
     advanced: 'accent',
   };
   const labels: Record<DifficultyLevel, string> = {
-    beginner: 'Beginner',
-    intermediate: 'Intermediate',
-    advanced: 'Advanced',
+    beginner: 'Mới bắt đầu',
+    intermediate: 'Trung cấp',
+    advanced: 'Nâng cao',
   };
   return <Tag label={labels[level]} variant={variants[level]} />;
 }

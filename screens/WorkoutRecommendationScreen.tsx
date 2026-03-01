@@ -15,8 +15,8 @@ export function WorkoutRecommendationScreen() {
 
   return (
     <ScreenContainer>
-      <Text style={styles.title}>Workout Recommendations</Text>
-      <Text style={styles.subtitle}>Tailored to your fitness goals</Text>
+      <Text style={styles.title}>Gợi ý bài tập</Text>
+      <Text style={styles.subtitle}>Phù hợp theo mục tiêu thể thao của bạn</Text>
 
       {/* Plan Toggle */}
       <View style={styles.toggleRow}>
@@ -68,11 +68,11 @@ function WorkoutCard({ workout }: { workout: Workout }) {
       <View style={styles.workoutStats}>
         <View style={styles.workoutStat}>
           <Ionicons name="time-outline" size={20} color={COLORS.secondary} />
-          <Text style={styles.workoutStatText}>{workout.duration} min</Text>
+          <Text style={styles.workoutStatText}>{workout.duration} phút</Text>
         </View>
         <View style={styles.workoutStat}>
           <Ionicons name="flame" size={20} color={COLORS.accent} />
-          <Text style={styles.workoutStatText}>{workout.caloriesBurned} cal burned</Text>
+          <Text style={styles.workoutStatText}>{workout.caloriesBurned} calo đốt</Text>
         </View>
       </View>
     </Card>

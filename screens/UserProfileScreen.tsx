@@ -7,18 +7,18 @@ import { MOCK_USER_PROFILE } from '../constants/mockData';
 import type { HealthGoal, ActivityLevel } from '../types';
 
 const GOAL_OPTIONS: { value: HealthGoal; label: string }[] = [
-  { value: 'lose_weight', label: 'Lose Weight' },
-  { value: 'gain_weight', label: 'Gain Weight' },
-  { value: 'maintain', label: 'Maintain' },
-  { value: 'build_muscle', label: 'Build Muscle' },
+  { value: 'lose_weight', label: 'Giảm cân' },
+  { value: 'gain_weight', label: 'Tăng cân' },
+  { value: 'maintain', label: 'Duy trì' },
+  { value: 'build_muscle', label: 'Tăng cơ' },
 ];
 
 const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string }[] = [
-  { value: 'sedentary', label: 'Sedentary' },
-  { value: 'light', label: 'Light' },
-  { value: 'moderate', label: 'Moderate' },
-  { value: 'active', label: 'Active' },
-  { value: 'very_active', label: 'Very Active' },
+  { value: 'sedentary', label: 'Ít vận động' },
+  { value: 'light', label: 'Nhẹ nhàng' },
+  { value: 'moderate', label: 'Trung bình' },
+  { value: 'active', label: 'Năng động' },
+  { value: 'very_active', label: 'Rất năng động' },
 ];
 
 export function UserProfileScreen() {
@@ -36,14 +36,14 @@ export function UserProfileScreen() {
 
   return (
     <ScreenContainer>
-      <Text style={styles.title}>Profile</Text>
-      <Text style={styles.subtitle}>Manage your health preferences</Text>
+      <Text style={styles.title}>Hồ sơ</Text>
+      <Text style={styles.subtitle}>Quản lý thông tin sức khỏe của bạn</Text>
 
       {/* Basic Info */}
       <Card style={styles.card}>
-        <Text style={styles.sectionTitle}>Basic Info</Text>
+        <Text style={styles.sectionTitle}>Thông tin cơ bản</Text>
         <View style={styles.inputRow}>
-          <Text style={styles.label}>Age</Text>
+          <Text style={styles.label}>Tuổi</Text>
           <TextInput
             style={styles.input}
             value={String(profile.age)}
@@ -52,7 +52,7 @@ export function UserProfileScreen() {
           />
         </View>
         <View style={styles.inputRow}>
-          <Text style={styles.label}>Gender</Text>
+          <Text style={styles.label}>Giới tính</Text>
           <View style={styles.genderRow}>
             {(['male', 'female', 'other'] as const).map((g) => (
               <TouchableOpacity
@@ -69,14 +69,14 @@ export function UserProfileScreen() {
                     profile.gender === g && styles.genderButtonTextActive,
                   ]}
                 >
-                  {g.charAt(0).toUpperCase() + g.slice(1)}
+                  {g === 'male' ? 'Nam' : g === 'female' ? 'Nữ' : 'Khác'}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
         <View style={styles.inputRow}>
-          <Text style={styles.label}>Height (cm)</Text>
+          <Text style={styles.label}>Chiều cao (cm)</Text>
           <TextInput
             style={styles.input}
             value={String(profile.height)}
@@ -85,7 +85,7 @@ export function UserProfileScreen() {
           />
         </View>
         <View style={styles.inputRow}>
-          <Text style={styles.label}>Weight (kg)</Text>
+          <Text style={styles.label}>Cân nặng (kg)</Text>
           <TextInput
             style={styles.input}
             value={String(profile.weight)}
@@ -97,7 +97,7 @@ export function UserProfileScreen() {
 
       {/* Activity Level */}
       <Card style={styles.card}>
-        <Text style={styles.sectionTitle}>Activity Level</Text>
+        <Text style={styles.sectionTitle}>Mức độ vận động</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {ACTIVITY_OPTIONS.map((opt) => (
             <TouchableOpacity
@@ -123,7 +123,7 @@ export function UserProfileScreen() {
 
       {/* Health Goal */}
       <Card style={styles.card}>
-        <Text style={styles.sectionTitle}>Health Goal</Text>
+        <Text style={styles.sectionTitle}>Mục tiêu sức khỏe</Text>
         <View style={styles.goalGrid}>
           {GOAL_OPTIONS.map((opt) => (
             <TouchableOpacity
@@ -164,10 +164,10 @@ export function UserProfileScreen() {
 
       {/* Dietary Restrictions */}
       <Card style={styles.card}>
-        <Text style={styles.sectionTitle}>Dietary Restrictions</Text>
+        <Text style={styles.sectionTitle}>Chế độ ăn kiêng</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
-          placeholder="e.g. gluten-free, vegan, nut allergy"
+          placeholder="VD: không gluten, chay, dị ứng hạt"
           placeholderTextColor={COLORS.textMuted}
           value={dietaryInput}
           onChangeText={(v) => {

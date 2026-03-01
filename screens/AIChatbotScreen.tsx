@@ -35,7 +35,7 @@ export function AIChatbotScreen() {
     setTimeout(() => {
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        text: "I'm here to help with nutrition, workouts, and healthy habits. What would you like to know more about?",
+        text: 'Tôi có thể hỗ trợ bạn về dinh dưỡng, tập luyện và thói quen lành mạnh. Bạn muốn tìm hiểu thêm về điều gì?',
         isUser: false,
         timestamp: new Date(),
       };
@@ -51,8 +51,8 @@ export function AIChatbotScreen() {
     >
       <View style={styles.header}>
         <Ionicons name="chatbubbles" size={24} color={COLORS.primary} />
-        <Text style={styles.title}>AI Health Assistant</Text>
-        <Text style={styles.subtitle}>Nutrition, workouts & habits</Text>
+        <Text style={styles.title}>Trợ lý sức khỏe AI</Text>
+        <Text style={styles.subtitle}>Dinh dưỡng, tập luyện & thói quen</Text>
       </View>
 
       <FlatList
@@ -66,7 +66,7 @@ export function AIChatbotScreen() {
       <View style={[styles.inputRow, { paddingBottom: insets.bottom + SPACING.md }]}>
         <TextInput
           style={styles.input}
-          placeholder="Ask about nutrition, workouts..."
+          placeholder="Hỏi về dinh dưỡng, tập luyện..."
           placeholderTextColor={COLORS.textMuted}
           value={inputText}
           onChangeText={setInputText}

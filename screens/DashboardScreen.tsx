@@ -12,29 +12,29 @@ export function DashboardScreen() {
 
   return (
     <ScreenContainer>
-      <Text style={styles.title}>Dashboard</Text>
-      <Text style={styles.subtitle}>Your health overview</Text>
+      <Text style={styles.title}>Bảng điều khiển</Text>
+      <Text style={styles.subtitle}>Tổng quan sức khỏe của bạn</Text>
 
       {/* Calorie Summary */}
       <Card style={styles.card}>
         <View style={styles.calorieHeader}>
           <Ionicons name="flame" size={24} color={COLORS.accent} />
-          <Text style={styles.cardTitle}>Daily Calories</Text>
+          <Text style={styles.cardTitle}>Calo hàng ngày</Text>
         </View>
         <ProgressBar
           value={caloriesConsumed}
           max={dailyCalorieTarget}
-          label="Consumed"
+          label="Đã ăn"
           color={COLORS.primary}
         />
         <View style={styles.statsRow}>
           <View style={styles.stat}>
             <Text style={styles.statValue}>{caloriesBurned}</Text>
-            <Text style={styles.statLabel}>Burned</Text>
+            <Text style={styles.statLabel}>Đã đốt</Text>
           </View>
           <View style={styles.stat}>
             <Text style={styles.statValue}>{remaining}</Text>
-            <Text style={styles.statLabel}>Remaining</Text>
+            <Text style={styles.statLabel}>Còn lại</Text>
           </View>
         </View>
       </Card>
@@ -43,12 +43,12 @@ export function DashboardScreen() {
       <Card style={styles.card}>
         <View style={styles.calorieHeader}>
           <Ionicons name="body" size={24} color={COLORS.secondary} />
-          <Text style={styles.cardTitle}>Body Stats</Text>
+          <Text style={styles.cardTitle}>Chỉ số cơ thể</Text>
         </View>
         <View style={styles.statsRow}>
           <View style={styles.stat}>
             <Text style={styles.statValue}>{weight} kg</Text>
-            <Text style={styles.statLabel}>Weight</Text>
+            <Text style={styles.statLabel}>Cân nặng</Text>
           </View>
           <View style={styles.stat}>
             <Text style={styles.statValue}>{bmi}</Text>
@@ -58,13 +58,13 @@ export function DashboardScreen() {
       </Card>
 
       {/* Today's Meals */}
-      <Text style={styles.sectionTitle}>Today's Meals</Text>
+      <Text style={styles.sectionTitle}>Bữa ăn hôm nay</Text>
       {todayMeals.map((meal) => (
         <MealCard key={meal.id} meal={meal} />
       ))}
 
       {/* Today's Workouts */}
-      <Text style={styles.sectionTitle}>Today's Workouts</Text>
+      <Text style={styles.sectionTitle}>Bài tập hôm nay</Text>
       {todayWorkouts.map((workout) => (
         <WorkoutCard key={workout.id} workout={workout} />
       ))}
@@ -80,10 +80,10 @@ function MealCard({ meal }: { meal: Meal }) {
         {meal.goalTag && <GoalTag goal={meal.goalTag} />}
       </View>
       <View style={styles.macros}>
-        <Text style={styles.macroText}>{meal.calories} cal</Text>
-        <Text style={styles.macroText}>P: {meal.protein}g</Text>
-        <Text style={styles.macroText}>C: {meal.carbs}g</Text>
-        <Text style={styles.macroText}>F: {meal.fat}g</Text>
+        <Text style={styles.macroText}>{meal.calories} calo</Text>
+        <Text style={styles.macroText}>Đạm: {meal.protein}g</Text>
+        <Text style={styles.macroText}>Tinh bột: {meal.carbs}g</Text>
+        <Text style={styles.macroText}>Béo: {meal.fat}g</Text>
       </View>
     </Card>
   );
@@ -99,11 +99,11 @@ function WorkoutCard({ workout }: { workout: Workout }) {
       <View style={styles.workoutStats}>
         <View style={styles.workoutStat}>
           <Ionicons name="time-outline" size={16} color={COLORS.textSecondary} />
-          <Text style={styles.workoutStatText}>{workout.duration} min</Text>
+          <Text style={styles.workoutStatText}>{workout.duration} phút</Text>
         </View>
         <View style={styles.workoutStat}>
           <Ionicons name="flame-outline" size={16} color={COLORS.accent} />
-          <Text style={styles.workoutStatText}>{workout.caloriesBurned} cal</Text>
+          <Text style={styles.workoutStatText}>{workout.caloriesBurned} calo</Text>
         </View>
       </View>
     </Card>

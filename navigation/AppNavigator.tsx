@@ -3,8 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import {
   DashboardScreen,
-  FoodImageAnalysisScreen,
-  RecipeAnalysisScreen,
+  FoodAnalysisScreen,
   MealRecommendationScreen,
   WorkoutRecommendationScreen,
   AIChatbotScreen,
@@ -14,8 +13,7 @@ import { COLORS } from '../constants/theme';
 
 export type RootTabParamList = {
   Dashboard: undefined;
-  FoodImageAnalysis: undefined;
-  RecipeAnalysis: undefined;
+  FoodAnalysis: undefined;
   MealRecommendation: undefined;
   WorkoutRecommendation: undefined;
   AIChatbot: undefined;
@@ -46,29 +44,19 @@ export function AppNavigator() {
         name="Dashboard"
         component={DashboardScreen}
         options={{
-          tabBarLabel: 'Home',
+          tabBarLabel: 'Trang chủ',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
         }}
       />
       <Tab.Screen
-        name="FoodImageAnalysis"
-        component={FoodImageAnalysisScreen}
+        name="FoodAnalysis"
+        component={FoodAnalysisScreen}
         options={{
-          tabBarLabel: 'Food Scan',
+          tabBarLabel: 'Phân tích',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="camera" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="RecipeAnalysis"
-        component={RecipeAnalysisScreen}
-        options={{
-          tabBarLabel: 'Recipe',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="document-text" size={size} color={color} />
+            <Ionicons name="nutrition" size={size} color={color} />
           ),
         }}
       />
@@ -76,7 +64,7 @@ export function AppNavigator() {
         name="MealRecommendation"
         component={MealRecommendationScreen}
         options={{
-          tabBarLabel: 'Meals',
+          tabBarLabel: 'Bữa ăn',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="restaurant" size={size} color={color} />
           ),
@@ -86,7 +74,7 @@ export function AppNavigator() {
         name="WorkoutRecommendation"
         component={WorkoutRecommendationScreen}
         options={{
-          tabBarLabel: 'Workout',
+          tabBarLabel: 'Tập luyện',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="barbell" size={size} color={color} />
           ),
@@ -96,7 +84,7 @@ export function AppNavigator() {
         name="AIChatbot"
         component={AIChatbotScreen}
         options={{
-          tabBarLabel: 'AI Chat',
+          tabBarLabel: 'Chat AI',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="chatbubbles" size={size} color={color} />
           ),
@@ -106,7 +94,7 @@ export function AppNavigator() {
         name="UserProfile"
         component={UserProfileScreen}
         options={{
-          tabBarLabel: 'Profile',
+          tabBarLabel: 'Hồ sơ',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person" size={size} color={color} />
           ),

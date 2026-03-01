@@ -12,8 +12,8 @@ export function MealRecommendationScreen() {
 
   return (
     <ScreenContainer>
-      <Text style={styles.title}>Meal Recommendations</Text>
-      <Text style={styles.subtitle}>Personalized based on your goals</Text>
+      <Text style={styles.title}>Gợi ý bữa ăn</Text>
+      <Text style={styles.subtitle}>Cá nhân hóa theo mục tiêu của bạn</Text>
 
       {/* Plan Toggle */}
       <View style={styles.toggleRow}>
@@ -28,7 +28,7 @@ export function MealRecommendationScreen() {
             color={plan === 'daily' ? '#FFF' : COLORS.textSecondary}
           />
           <Text style={[styles.toggleText, plan === 'daily' && styles.toggleTextActive]}>
-            Daily Plan
+            Kế hoạch ngày
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -42,7 +42,7 @@ export function MealRecommendationScreen() {
             color={plan === 'weekly' ? '#FFF' : COLORS.textSecondary}
           />
           <Text style={[styles.toggleText, plan === 'weekly' && styles.toggleTextActive]}>
-            Weekly Plan
+            Kế hoạch tuần
           </Text>
         </TouchableOpacity>
       </View>
@@ -65,16 +65,16 @@ function MealCard({ meal }: { meal: Meal }) {
       <View style={styles.macros}>
         <View style={styles.macroItem}>
           <Ionicons name="flame" size={16} color={COLORS.accent} />
-          <Text style={styles.macroValue}>{meal.calories} cal</Text>
+          <Text style={styles.macroValue}>{meal.calories} calo</Text>
         </View>
         <View style={styles.macroItem}>
-          <Text style={styles.macroValue}>P: {meal.protein}g</Text>
+          <Text style={styles.macroValue}>Đạm: {meal.protein}g</Text>
         </View>
         <View style={styles.macroItem}>
-          <Text style={styles.macroValue}>C: {meal.carbs}g</Text>
+          <Text style={styles.macroValue}>Tinh bột: {meal.carbs}g</Text>
         </View>
         <View style={styles.macroItem}>
-          <Text style={styles.macroValue}>F: {meal.fat}g</Text>
+          <Text style={styles.macroValue}>Béo: {meal.fat}g</Text>
         </View>
       </View>
     </Card>
