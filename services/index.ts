@@ -1,2 +1,3 @@
-// Placeholder for future API services
-// e.g. nutrition API, workout API, AI chatbot API
+export { api } from './api';
+export type { ApiError } from './api';
+export { login, logout, getToken } from './auth';

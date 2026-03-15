@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card, ScreenContainer } from '../components';
+import { useAuth } from '../contexts/AuthContext';
 import { COLORS, SPACING } from '../constants/theme';
 import { MOCK_USER_PROFILE } from '../constants/mockData';
-import type { HealthGoal, ActivityLevel } from '../types';
+import type { HealthGoal, ActivityLevel, UserProfile } from '../types';
+import { fetchCurrentUser } from '../services/auth';
+import type { ApiError } from '../services/api';
 
 const GOAL_OPTIONS: { value: HealthGoal; label: string }[] = [
   { value: 'lose_weight', label: 'Giảm cân' },
@@ -22,10 +25,59 @@ const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string }[] = [
 ];
 
 export function UserProfileScreen() {
-  const [profile, setProfile] = useState(MOCK_USER_PROFILE);
+  const { token, logout } = useAuth();
+  const [profile, setProfile] = useState<UserProfile>(MOCK_USER_PROFILE);
   const [dietaryInput, setDietaryInput] = useState(
     profile.dietaryRestrictions.join(', ')
   );
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+
+    let isMounted = true;
+
+    const loadProfile = async () => {
+      try {
+        setLoading(true);
+        const me = await fetchCurrentUser(token);
+        if (!isMounted) return;
+
+        const mapped: UserProfile = {
+          ...profile,
+          age: me.age ?? profile.age,
+          gender: (me.gender as UserProfile['gender']) ?? profile.gender,
+          height: me.height ?? profile.height,
+          weight: me.weight ?? profile.weight,
+          activityLevel: profile.activityLevel,
+          healthGoal: (me.goal as HealthGoal) ?? profile.healthGoal,
+          dietaryRestrictions: me.allergies ?? profile.dietaryRestrictions,
+        };
+
+        setProfile(mapped);
+        setDietaryInput((me.allergies ?? []).join(', '));
+        setError(null);
+      } catch (err) {
+        const apiError = err as ApiError;
+        if (apiError.status === 401) {
+          setError('Không thể lấy thông tin người dùng (401 - chưa xác thực).');
+        } else {
+          setError(apiError.message || 'Không thể tải hồ sơ người dùng');
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadProfile();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [token]);
 
   const updateProfile = <K extends keyof typeof profile>(
     key: K,
@@ -38,6 +90,14 @@ export function UserProfileScreen() {
     <ScreenContainer>
       <Text style={styles.title}>Hồ sơ</Text>
       <Text style={styles.subtitle}>Quản lý thông tin sức khỏe của bạn</Text>
+
+      {loading && (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator size="small" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Đang tải hồ sơ...</Text>
+        </View>
+      )}
+      {error && !loading && <Text style={styles.errorText}>{error}</Text>}
 
       {/* Basic Info */}
       <Card style={styles.card}>
@@ -180,6 +240,15 @@ export function UserProfileScreen() {
           multiline
         />
       </Card>
+
+      <TouchableOpacity
+        style={styles.logoutButton}
+        onPress={logout}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="log-out" size={22} color={COLORS.error} />
+        <Text style={styles.logoutButtonText}>Đăng xuất</Text>
+      </TouchableOpacity>
     </ScreenContainer>
   );
 }
@@ -288,5 +357,36 @@ const styles = StyleSheet.create({
   },
   goalButtonTextActive: {
     color: '#FFF',
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  errorText: {
+    fontSize: 14,
+    color: COLORS.error,
+    marginBottom: SPACING.md,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.md,
+    marginTop: SPACING.lg,
+    borderWidth: 1,
+    borderColor: COLORS.error,
+    borderRadius: 12,
+  },
+  logoutButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.error,
   },
 });

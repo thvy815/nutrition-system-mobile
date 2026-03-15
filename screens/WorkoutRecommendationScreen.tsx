@@ -31,7 +31,7 @@ export function WorkoutRecommendationScreen() {
             color={plan === 'daily' ? '#FFF' : COLORS.textSecondary}
           />
           <Text style={[styles.toggleText, plan === 'daily' && styles.toggleTextActive]}>
-            Daily
+            Kế hoạch ngày
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -45,7 +45,7 @@ export function WorkoutRecommendationScreen() {
             color={plan === 'weekly' ? '#FFF' : COLORS.textSecondary}
           />
           <Text style={[styles.toggleText, plan === 'weekly' && styles.toggleTextActive]}>
-            Weekly
+            Kế hoạch tuần
           </Text>
         </TouchableOpacity>
       </View>
