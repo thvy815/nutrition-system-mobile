@@ -126,13 +126,13 @@ git clone https://github.com/thvy815/nutrition-system-mobile.git
 cd nutrition-system-mobile
 ```
 
-8.3 Install dependencies
+### 8.3 Install dependencies
 
 ```bash
 npm install
 ```
 
-8.4 Configure environment variables
+### 8.4 Configure environment variables
 
 Create a .env file:
 
@@ -140,19 +140,19 @@ Create a .env file:
 API_BASE_URL=http://localhost:8080
 ```
 
-8.5 Run the application
+### 8.5 Run the application
 
 ```bash
 npm start
 ```
 
-9. Deployment
+## 9. Deployment
 
 The application can be run using Expo on mobile devices or emulators.
 
 Future deployment may include publishing to app stores.
 
-10. Notes
+## 10. Notes
 
 This project was developed as part of a team-based academic project in a Software Engineering course.
 
