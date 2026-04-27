@@ -4,6 +4,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { WorkoutProvider } from './contexts/WorkoutContext';
 import { AppNavigator } from './navigation';
 import { LoginScreen } from './screens';
 import { COLORS } from './constants/theme';
@@ -30,10 +31,12 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <NavigationContainer>
-          <StatusBar style="dark" />
-          <RootNavigator />
-        </NavigationContainer>
+        <WorkoutProvider>
+          <NavigationContainer>
+            <StatusBar style="dark" />
+            <RootNavigator />
+          </NavigationContainer>
+        </WorkoutProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

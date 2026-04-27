@@ -5,3 +5,6 @@ export { MealRecommendationScreen } from './MealRecommendationScreen';
 export { WorkoutRecommendationScreen } from './WorkoutRecommendationScreen';
 export { AIChatbotScreen } from './AIChatbotScreen';
 export { UserProfileScreen } from './UserProfileScreen';
+export { WorkoutPlanScreen } from './WorkoutPlanScreen';
+export { DayDetailScreen } from './DayDetailScreen';
+export { ExerciseDetailScreen } from './ExerciseDetailScreen';

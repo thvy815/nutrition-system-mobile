@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import {
   DashboardScreen,
   FoodAnalysisScreen,
@@ -8,6 +9,9 @@ import {
   WorkoutRecommendationScreen,
   AIChatbotScreen,
   UserProfileScreen,
+  WorkoutPlanScreen,
+  DayDetailScreen,
+  ExerciseDetailScreen,
 } from '../screens';
 import { COLORS } from '../constants/theme';
 
@@ -16,11 +20,43 @@ export type RootTabParamList = {
   FoodAnalysis: undefined;
   MealRecommendation: undefined;
   WorkoutRecommendation: undefined;
+  WorkoutPlan: undefined;
   AIChatbot: undefined;
   UserProfile: undefined;
 };
 
+export type WorkoutPlanStackParamList = {
+  WorkoutPlanList: undefined;
+  DayDetail: { dayNumber: number };
+  ExerciseDetail: { dayNumber: number; exerciseId: number };
+};
+
 const Tab = createBottomTabNavigator<RootTabParamList>();
+const WorkoutStack = createNativeStackNavigator<WorkoutPlanStackParamList>();
+
+// Workout Plan Stack Navigator
+function WorkoutPlanStackNavigator() {
+  return (
+    <WorkoutStack.Navigator
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      <WorkoutStack.Screen
+        name="WorkoutPlanList"
+        component={WorkoutPlanScreen}
+      />
+      <WorkoutStack.Screen
+        name="DayDetail"
+        component={DayDetailScreen}
+      />
+      <WorkoutStack.Screen
+        name="ExerciseDetail"
+        component={ExerciseDetailScreen}
+      />
+    </WorkoutStack.Navigator>
+  );
+}
 
 export function AppNavigator() {
   return (
@@ -67,6 +103,16 @@ export function AppNavigator() {
           tabBarLabel: 'Bữa ăn',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="restaurant" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="WorkoutPlan"
+        component={WorkoutPlanStackNavigator}
+        options={{
+          tabBarLabel: 'Kế hoạch',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="dumbbell" size={size} color={color} />
           ),
         }}
       />

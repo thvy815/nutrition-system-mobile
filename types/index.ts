@@ -65,3 +65,15 @@ export interface ChatMessage {
   isUser: boolean;
   timestamp: Date;
 }
+
+// Workout types
+export type {
+  DayType,
+  MuscleGroup,
+  WorkoutLevel,
+  Exercise,
+  WorkoutDay,
+  WorkoutPlan,
+  WorkoutPlanResponse,
+  WorkoutSession,
+} from './workout';
