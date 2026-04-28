@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import { Card, ScreenContainer } from '../components';
 import { COLORS, SPACING } from '../constants/theme';
 import { MOCK_FOOD_ANALYSIS, MOCK_RECIPE_ANALYSIS } from '../constants/mockData';
 import type { FoodAnalysisResult, RecipeAnalysisResult } from '../types';
-import { detectRecipe, Recipe, searchRecipesByIngredient, getIngredientsAndInstructionsInAi, findIngredientsByAi, Ingredient } from '../services/recipe';
+import { detectRecipe, Recipe, searchRecipesByIngredient, getIngredientsAndInstructionsInAi, findIngredientsByAi, Ingredient, getMappingIngredients, MappedIngredient } from '../services/recipe';
 import { useAuth } from '../contexts/AuthContext';
 import { ActivityIndicator } from 'react-native';
 
@@ -32,17 +32,34 @@ export function FoodAnalysisScreen() {
 
   const [imageResult, setImageResult] = useState<Recipe | null>(null);
   const [ingredientResult, setIngredientResult] = useState<Ingredient[] | null>(null);
+  const [ingMappingResult, setIngMappingResult] = useState<MappedIngredient[] | null>(null);
+
+  const handleMapping = async (ingredients: { name: string }[]) => {
+    if (!token || !ingredients || ingredients.length === 0) {
+      console.warn("Thiếu token hoặc danh sách nguyên liệu trống");
+      return null;
+    }
+    setLoading(true);
+    try {
+      const result = await getMappingIngredients(ingredients, 1, token);
+      console.log(">>>result mapping", result[0]);
+      return result;
+    } catch (err) {
+      console.error('Mapping error:', err);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const handleDetectRecipe = async (imageAsset: any) => {
     if (!token) return;
-
     setLoading(true);
     try {
       const result = await detectRecipe(imageAsset, token);
 
       if (result.success) {
         let foodName = result.detectedFoodName;
-        console.log(">>>foodName da co:", foodName)
         setDetectedName(foodName);
         try {
           const result = await searchRecipesByIngredient({
@@ -54,10 +71,18 @@ export function FoodAnalysisScreen() {
           if (result.recipes.length === 0) {
             console.log(">>>Vao getIngredientsAndInstructionsInAi")
             const resultByAi = await getIngredientsAndInstructionsInAi(foodName, token);
+
+            const ingList = resultByAi?.ingredients || [];
+            const nameIngList = ingList.map((ing: any) => ({
+              name: ing.name
+            }));
+            const temp = await handleMapping(nameIngList);
+            setIngMappingResult(temp);
             setImageResult(resultByAi);
           } else {
             console.log(">>>Vao searchRecipesByIngredient")
             setImageResult(result.recipes[0]);
+            console.log(">>>imageResult:", result.recipes[0])
           }
 
         } catch (err) {
@@ -67,10 +92,6 @@ export function FoodAnalysisScreen() {
           setLoading(false); // Tắt trạng thái chờ
         }
 
-        // setImageResult({
-        //   ...MOCK_FOOD_ANALYSIS,
-        //   foodName: result.detectedFoodName
-        // });
       } else {
         Alert.alert('Thông báo', 'Không nhận diện được món ăn trong ảnh.');
       }
@@ -85,6 +106,22 @@ export function FoodAnalysisScreen() {
 
   const pickImage = async (useCamera: boolean) => {
     try {
+      if (useCamera) {
+        // Xin quyền camera
+        const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+        if (cameraPermission.status !== 'granted') {
+          Alert.alert('Lỗi', 'Bạn cần cấp quyền truy cập camera để chụp ảnh.');
+          return;
+        }
+      } else {
+        // Xin quyền thư viện ảnh
+        const libraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (libraryPermission.status !== 'granted') {
+          Alert.alert('Lỗi', 'Bạn cần cấp quyền truy cập thư viện để chọn ảnh.');
+          return;
+        }
+      }
+
       const result = useCamera
         ? await ImagePicker.launchCameraAsync({
           mediaTypes: 'images',
@@ -120,7 +157,6 @@ export function FoodAnalysisScreen() {
       try {
         const res = await findIngredientsByAi(recipeText, token);
         setIngredientResult(res);
-        console.log(">>>ingr res:", res);
       } catch (err) {
         console.error('Search error:', err);
         // Alert.alert('Lỗi', 'Không thể kết nối máy chủ hoặc tìm thấy cong thuc.');
@@ -277,7 +313,24 @@ export function FoodAnalysisScreen() {
                   fat={imageResult.totalNutrition?.fat || imageResult.totalNutritionPerServing?.fat || 0}
                 />
               }
-
+              {
+                ingMappingResult && (
+                  <Card style={styles.resultCard}>
+                    <Text style={styles.resultLabel}>Nguyên liệu dùng để tính dinh dưỡng</Text>
+                    {ingMappingResult.map((ing, i) => (
+                      <Card key={i} style={styles.ingredientCard}>
+                        <Text style={styles.ingredientName}>{ing.name}</Text>
+                        <View style={styles.ingredientMacros}>
+                          <Text style={styles.macroText}>{ing.nutrition?.calories} calo</Text>
+                          <Text style={styles.macroText}>Protein: {ing.nutrition?.protein}g</Text>
+                          <Text style={styles.macroText}>Carb: {ing.nutrition?.carbs}g</Text>
+                          <Text style={styles.macroText}>Fat: {ing.nutrition?.fat}g</Text>
+                        </View>
+                      </Card>
+                    ))}
+                  </Card>
+                )
+              }
             </>
           )}
 
@@ -292,6 +345,25 @@ export function FoodAnalysisScreen() {
                   </View>
                 </Card>
               ))}
+
+              {
+                ingMappingResult && (
+                  <Card style={styles.resultCard}>
+                    <Text style={styles.resultLabel}>Nguyên liệu dùng để tính dinh dưỡng</Text>
+                    {ingMappingResult.map((ing, i) => (
+                      <Card key={i} style={styles.ingredientCard}>
+                        <Text style={styles.ingredientName}>{ing.name}</Text>
+                        <View style={styles.ingredientMacros}>
+                          <Text style={styles.macroText}>Calo: {ing.nutrition?.calories}kCal</Text>
+                          <Text style={styles.macroText}>Pro: {ing.nutrition?.protein}g</Text>
+                          <Text style={styles.macroText}>Carb: {ing.nutrition?.carbs}g</Text>
+                          <Text style={styles.macroText}>Fat: {ing.nutrition?.fat}g</Text>
+                        </View>
+                      </Card>
+                    ))}
+                  </Card>
+                )
+              }
             </>
           )}
         </View>

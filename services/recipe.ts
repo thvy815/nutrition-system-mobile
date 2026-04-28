@@ -63,12 +63,66 @@ export type IngrAndInstrResponse = {
   instructions: string[];
   servings?: number;
 }
+export type MappedIngredient = {
+  id: string;
+  mongo_id: string;
+  name: string;
+  nutrition: Nutrition;
+  score: number;
+  // ... các trường khác
+}
+export type AIInputBatch = {
+  input: string;
+  results: MappedIngredient[]; // Đây là mảng kết quả cho mỗi ingredient gửi lên
+};
 
+export type MappingResponse = {
+  results: AIInputBatch[];
+};
+export const getMappingIngredients = async (
+  ingredients: { name: string }[],
+  topK = 1,
+  token: string
+): Promise<MappedIngredient[]> => {
+  try {
+    // Body gửi lên Backend
+    const body = {
+      ingredients: ingredients.map(inObj => ({ name: inObj.name })),
+      topK: topK
+    };
+    console.log("vo mapping")
+    const res = await api.post<MappingResponse>(
+      'http://192.168.31.206:8000/search_batch',
+      body,
+      token
+    );
+    const allMappedIngredients: MappedIngredient[] = res.data.results.flatMap(
+      (batch) => batch.results[0]
+    );
+    return allMappedIngredients;
+  } catch (error: any) {
+    console.error("Lỗi khi AI trích xuất nguyên liệu:", error);
+    throw error;
+  }
+};
 // Dữ liệu gửi đi (Request Body)
 export interface ExtractIngredientsRequest {
   recipe: string;
   servings?: number;
 }
+export async function findIngredientById(
+  params: {
+    ingredientId: string;
+  },
+  token: string
+): Promise<Ingredient> {
+  const { data } = await api.get<Ingredient>(
+    `/recipe/ingredients/${params.ingredientId}`,
+    token
+  );
+  return data;
+}
+
 export const findIngredientsByAi = async (
   recipeText: string,
   token: string,

@@ -10,7 +10,9 @@ async function request<T>(
   options: Omit<RequestInit, 'body'> & { body?: any } = {} // Đổi body thành any để nhận FormData
 ): Promise<{ data: T; status: number }> {
   const { body, ...fetchOptions } = options;
-  const url = `${API_BASE_URL}${endpoint}`;
+  const url = endpoint.startsWith('http') 
+    ? endpoint 
+    : `${API_BASE_URL}${endpoint}`;
 
   const headers: Record<string, string> = {
     ...((fetchOptions.headers as Record<string, string>) || {}),
