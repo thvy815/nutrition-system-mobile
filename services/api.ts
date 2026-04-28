@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../constants/api';
+import { getToken } from './auth';
 
 export type ApiError = {
   message: string;
@@ -17,6 +18,12 @@ async function request<T>(
   const headers: Record<string, string> = {
     ...((fetchOptions.headers as Record<string, string>) || {}),
   };
+
+  // Tự động lấy token từ auth service và thêm vào headers
+  const token = await getToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
   const config: RequestInit = {
     ...fetchOptions,
@@ -52,37 +59,32 @@ async function request<T>(
 }
 
 export const api = {
-  get: <T>(endpoint: string, token?: string) =>
+  get: <T>(endpoint: string) =>
     request<T>(endpoint, {
       method: 'GET',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
     }),
 
-  post: <T>(endpoint: string, body?: object, token?: string) =>
+  post: <T>(endpoint: string, body?: object) =>
     request<T>(endpoint, {
       method: 'POST',
       body,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
     }),
 
-  put: <T>(endpoint: string, body?: object, token?: string) =>
+  put: <T>(endpoint: string, body?: object) =>
     request<T>(endpoint, {
       method: 'PUT',
       body,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
     }),
 
-  delete: <T>(endpoint: string, body?: object, token?: string) =>
+  delete: <T>(endpoint: string, body?: object) =>
     request<T>(endpoint, {
       method: 'DELETE',
       body,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
     }),
 
-  patch: <T>(endpoint: string, body?: object, token?: string) =>
+  patch: <T>(endpoint: string, body?: object) =>
     request<T>(endpoint, {
       method: 'PATCH',
       body,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
     }),
 };

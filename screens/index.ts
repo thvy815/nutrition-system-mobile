@@ -7,3 +7,4 @@ export { UserProfileScreen } from './UserProfileScreen';
 export { WorkoutPlanScreen } from './WorkoutPlanScreen';
 export { DayDetailScreen } from './DayDetailScreen';
 export { ExerciseDetailScreen } from './ExerciseDetailScreen';
+export { WorkoutSessionScreen } from './WorkoutSessionScreen';

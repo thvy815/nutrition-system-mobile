@@ -10,12 +10,14 @@ import {
   WorkoutPlanScreen,
   DayDetailScreen,
   ExerciseDetailScreen,
+  WorkoutSessionScreen,
 } from '../screens';
 
 export type WorkoutStackParamList = {
   WorkoutPlan: undefined;
   DayDetail: { dayNumber: number };
   ExerciseDetail: { dayNumber: number; exerciseId: number };
+  WorkoutSession: { dayNumber: number; exerciseId: number };
 };
 
 const Stack = createNativeStackNavigator<WorkoutStackParamList>();
@@ -47,6 +49,13 @@ export function WorkoutNavigator() {
         component={ExerciseDetailScreen}
         options={{
           animation: 'slide_from_right',
+        }}
+      />
+      <Stack.Screen
+        name="WorkoutSession"
+        component={WorkoutSessionScreen}
+        options={{
+          animation: 'slide_from_bottom',
         }}
       />
     </Stack.Navigator>

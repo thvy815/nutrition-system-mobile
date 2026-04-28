@@ -7,19 +7,23 @@ let inMemoryToken: string | null = null;
 export async function login(credentials: LoginRequest): Promise<LoginSuccessResponse> {
   const { data } = await api.post<LoginSuccessResponse>('/auth/login', credentials);
   if (data.token) {
-    inMemoryToken = data.token;
+    setToken(data.token); 
   }
   return data;
 }
 
-export async function fetchCurrentUser(token: string): Promise<LoginUser> {
-  const { data } = await api.get<LoginUser>('/auth/me', token);
+export async function fetchCurrentUser(): Promise<LoginUser> {
+  const { data } = await api.get<LoginUser>('/auth/me');
   return data;
 }
 
 export async function logout(): Promise<void> {
-  inMemoryToken = null;
+  setToken(null);
 }
+
+export const setToken = (token: string | null) => {
+  inMemoryToken = token;
+};
 
 export async function getToken(): Promise<string | null> {
   return inMemoryToken;

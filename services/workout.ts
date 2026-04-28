@@ -4,18 +4,26 @@
  */
 
 import { api } from './api';
-import { WorkoutPlanResponse, WorkoutPlan, ExerciseDetail } from '../types/workout';
+import { 
+  WorkoutPlanResponse, 
+  WorkoutPlan, 
+  ExerciseDetail,
+  WorkoutSessionResponse,
+  WorkoutSessionData,
+  WorkoutSessionStartRequest,
+} from '../types/workout';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MOCK_WORKOUT_PLAN, USE_MOCK_DATA } from '../constants/workoutMockData';
 
 const WORKOUT_STORAGE_KEY = 'workout_plan';
 const WORKOUT_SESSIONS_KEY = 'workout_sessions';
+const ACTIVE_SESSION_KEY = 'active_workout_session';
 
 export const workoutService = {
   /**
    * Fetch workout plan from API
    */
-  async getWorkoutPlan(token?: string): Promise<WorkoutPlan> {
+  async getWorkoutPlan(): Promise<WorkoutPlan> {
     try {
       // Use mock data if enabled
       if (USE_MOCK_DATA) {
@@ -24,7 +32,7 @@ export const workoutService = {
         return MOCK_WORKOUT_PLAN;
       }
 
-      const { data } = await api.get<WorkoutPlanResponse>('/workout-plan/current', token);
+      const { data } = await api.get<WorkoutPlanResponse>('/workout-plan/current');
       if (data.success) {
         // Cache locally
         await AsyncStorage.setItem(WORKOUT_STORAGE_KEY, JSON.stringify(data.data));
@@ -146,5 +154,107 @@ export const workoutService = {
    */
   calculateDayCalories(exercises: any[] = []): number {
     return exercises.reduce((total, exercise) => total + (exercise.calories || 0), 0);
+  },
+
+  /**
+   * Start a workout session
+   */
+  async startWorkoutSession(
+    userId: string,
+    exerciseId: number | string,
+    intensity: 'light' | 'moderate' | 'intense' = 'moderate'
+  ): Promise<WorkoutSessionData> {
+    try {
+      const payload: WorkoutSessionStartRequest = {
+        userId,
+        exerciseId,
+        intensity,
+      };
+      const { data } = await api.post<WorkoutSessionResponse>(
+        '/workout-session/start',
+        payload
+      );
+      if (data.success) {
+        // Save active session to local storage
+        await AsyncStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(data.data));
+        return data.data;
+      }
+      throw new Error('Failed to start workout session');
+    } catch (error) {
+      console.error('Error starting workout session:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Stop a workout session
+   */
+  async stopWorkoutSession(sessionId: string): Promise<WorkoutSessionData> {
+    try {
+      const { data } = await api.post<WorkoutSessionResponse>(
+        '/workout-session/stop',
+        { sessionId }
+      );
+      if (data.success) {
+        // Clear active session from storage
+        await AsyncStorage.removeItem(ACTIVE_SESSION_KEY);
+        return data.data;
+      }
+      throw new Error('Failed to stop workout session');
+    } catch (error) {
+      console.error('Error stopping workout session:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get active workout session
+   */
+  async getActiveSession(): Promise<WorkoutSessionData | null> {
+    try {
+      const session = await AsyncStorage.getItem(ACTIVE_SESSION_KEY);
+      return session ? JSON.parse(session) : null;
+    } catch (error) {
+      console.error('Error getting active session:', error);
+      return null;
+    }
+  },
+
+  /**
+   * Save session progress locally (for pause/resume)
+   */
+  async saveSessionProgress(sessionId: string, progress: any): Promise<void> {
+    try {
+      const progressKey = `session_progress_${sessionId}`;
+      await AsyncStorage.setItem(progressKey, JSON.stringify(progress));
+    } catch (error) {
+      console.error('Error saving session progress:', error);
+    }
+  },
+
+  /**
+   * Get session progress
+   */
+  async getSessionProgress(sessionId: string): Promise<any> {
+    try {
+      const progressKey = `session_progress_${sessionId}`;
+      const progress = await AsyncStorage.getItem(progressKey);
+      return progress ? JSON.parse(progress) : null;
+    } catch (error) {
+      console.error('Error getting session progress:', error);
+      return null;
+    }
+  },
+
+  /**
+   * Clear session progress
+   */
+  async clearSessionProgress(sessionId: string): Promise<void> {
+    try {
+      const progressKey = `session_progress_${sessionId}`;
+      await AsyncStorage.removeItem(progressKey);
+    } catch (error) {
+      console.error('Error clearing session progress:', error);
+    }
   },
 };

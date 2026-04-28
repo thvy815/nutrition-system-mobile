@@ -11,6 +11,7 @@ import {
   WorkoutPlanScreen,
   DayDetailScreen,
   ExerciseDetailScreen,
+  WorkoutSessionScreen,
 } from '../screens';
 import { COLORS } from '../constants/theme';
 
@@ -27,6 +28,7 @@ export type WorkoutPlanStackParamList = {
   WorkoutPlanList: undefined;
   DayDetail: { dayNumber: number };
   ExerciseDetail: { dayNumber: number; exerciseId: number };
+  WorkoutSession: { dayNumber: number; exerciseId: number };
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -51,6 +53,10 @@ function WorkoutPlanStackNavigator() {
       <WorkoutStack.Screen
         name="ExerciseDetail"
         component={ExerciseDetailScreen}
+      />
+      <WorkoutStack.Screen
+        name="WorkoutSession"
+        component={WorkoutSessionScreen}
       />
     </WorkoutStack.Navigator>
   );

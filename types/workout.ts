@@ -94,4 +94,33 @@ export interface WorkoutSession {
   completedAt?: string;
 }
 
+// Workout Session API Types
+export interface WorkoutSessionData {
+  _id: string;
+  userId: string;
+  exerciseId: number;
+  intensity: 'light' | 'moderate' | 'intense';
+  startTime: string;
+  endTime: string | null;
+  durationMinutes: number | null;
+  kcalBurned: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkoutSessionResponse {
+  success: boolean;
+  data: WorkoutSessionData;
+}
+
+export interface WorkoutSessionStartRequest {
+  userId: string;
+  exerciseId: number | string;
+  intensity: 'light' | 'moderate' | 'intense';
+}
+
+export interface WorkoutSessionStopRequest {
+  sessionId: string;
+}
+
 export const DAY_NAMES = (day: number) => `Ngày ${day}`;

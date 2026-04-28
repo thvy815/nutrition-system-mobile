@@ -35,6 +35,20 @@ export const DayDetailScreen = ({ route, navigation }: any) => {
     );
   }
 
+  const handleStartWorkout = () => {
+    // Navigate to first exercise's workout session
+    if (day.exerciseDetails && day.exerciseDetails.length > 0) {
+      const firstExercise = day.exerciseDetails[0];
+      navigation.navigate('WorkoutSession', {
+        dayNumber: dayNumber,
+        exerciseId: firstExercise.exerciseId,
+      });
+    } else {
+      // No exercises found
+      alert('Không tìm thấy bài tập cho ngày này');
+    }
+  };
+
   return (
     <ScreenContainer>
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
@@ -68,7 +82,7 @@ export const DayDetailScreen = ({ route, navigation }: any) => {
         </View>
 
         {/* START BUTTON */}
-        <TouchableOpacity style={styles.startBtn}>
+        <TouchableOpacity style={styles.startBtn} onPress={handleStartWorkout}>
           <Text style={styles.startText}>BẮT ĐẦU NGAY</Text>
         </TouchableOpacity>
 
