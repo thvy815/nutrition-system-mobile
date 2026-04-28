@@ -3,33 +3,75 @@
  */
 
 export type DayType = 'workout' | 'rest';
-export type MuscleGroup = 'full_body' | 'chest' | 'back' | 'legs' | 'shoulders' | 'arms' | 'core';
 export type WorkoutLevel = 'beginner' | 'intermediate' | 'advanced';
 
-export interface Exercise {
+export interface ExercisePreview {
   exerciseId: number;
   name: string;
-  sets: number;
-  reps: string; // e.g., "10-12"
   duration: number; // minutes
-  calories: number;
-  image?: string;
-  description?: string;
+}
+
+export interface ExerciseMuscle {
+  id: number;
+  name: string;
+  name_en: string;
+  _id?: string;
+}
+
+export interface ExerciseDetail {
+  _id: string;
+  exerciseId: number;
+  name: string;
+  description: string;
+  category: string;
+  categoryId: number;
+  equipment: Array<{
+    id: number;
+    name: string;
+    _id?: string;
+  }>;
+  images: string[];
+  muscles: ExerciseMuscle[];
+  muscles_secondary: ExerciseMuscle[];
+  videos: string[];
+  activityType: string;
+  defaultIntensity: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface WorkoutDay {
-  day: number; // 1-7
-  type: DayType;
-  muscleGroup?: MuscleGroup;
-  targetCalories?: number;
-  exercises?: Exercise[];
-  completed?: boolean;
+  day: number;
+  type: 'workout' | 'rest';
+  totalDuration: number;
+  totalCalories: number;
+  completed: boolean;
+  completedAt: string | null;
+
+  muscleGroup?: {
+    id: number;
+    name: string;
+    name_en: string;
+    _id?: string;
+  }[];
+
+  exerciseDetails?: {
+    exerciseId: number;
+    name: string;
+    duration: number;
+    calories: number;
+    sets?: number;
+    reps?: string;
+    _id?: string;
+  }[];
 }
 
 export interface WorkoutPlan {
+  _id: string;
   userId: string;
   workoutLevel: WorkoutLevel;
   targetCalories: number;
+  currentDay?: number;
   plan: WorkoutDay[];
   generatedAt: string;
 }
@@ -39,6 +81,11 @@ export interface WorkoutPlanResponse {
   data: WorkoutPlan;
 }
 
+export interface ExerciseDetailResponse {
+  success?: boolean;
+  data?: ExerciseDetail;
+}
+
 // For local state
 export interface WorkoutSession {
   dayNumber: number;
@@ -46,3 +93,5 @@ export interface WorkoutSession {
   completed: boolean;
   completedAt?: string;
 }
+
+export const DAY_NAMES = (day: number) => `Day ${day}`;

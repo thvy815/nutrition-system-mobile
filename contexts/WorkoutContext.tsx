@@ -6,6 +6,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { WorkoutPlan, WorkoutDay } from '../types/workout';
 import { workoutService } from '../services/workout';
+import { useAuth } from './AuthContext';
 
 interface WorkoutContextType {
   plan: WorkoutPlan | null;
@@ -28,6 +29,7 @@ interface WorkoutContextType {
 const WorkoutContext = createContext<WorkoutContextType | undefined>(undefined);
 
 export const WorkoutProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { token } = useAuth();
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,10 +37,12 @@ export const WorkoutProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [completedSessions, setCompletedSessions] = useState<any[]>([]);
 
-  // Fetch workout plan on mount
+  // Fetch workout plan on mount and when token changes
   useEffect(() => {
-    fetchPlan();
-  }, []);
+    if (token) {
+      fetchPlan();
+    }
+  }, [token]);
 
   // Load completed sessions
   useEffect(() => {
@@ -49,7 +53,7 @@ export const WorkoutProvider: React.FC<{ children: ReactNode }> = ({ children })
     setLoading(true);
     setError(null);
     try {
-      const data = await workoutService.getWorkoutPlan();
+      const data = await workoutService.getWorkoutPlan(token || undefined);
       setPlan(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không thể tải kế hoạch tập luyện');
@@ -85,7 +89,7 @@ export const WorkoutProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const getDayProgress = async (dayNumber: number): Promise<number> => {
     const day = plan?.plan.find(d => d.day === dayNumber);
-    const totalExercises = day?.exercises?.length || 0;
+    const totalExercises = day?.exerciseDetails?.length || 0;
     return await workoutService.getDayCompletionPercentage(dayNumber, totalExercises);
   };
 
@@ -97,7 +101,9 @@ export const WorkoutProvider: React.FC<{ children: ReactNode }> = ({ children })
     return dayOfWeek === 0 ? 7 : dayOfWeek; // Convert Sunday (0) to 7
   };
 
-  const selectedDay = selectedDayNumber ? plan?.plan.find(d => d.day === selectedDayNumber) : null;
+  const selectedDay = selectedDayNumber
+    ? plan?.plan.find(d => d.day === selectedDayNumber) || null
+    : null;
 
   const value: WorkoutContextType = {
     plan,
