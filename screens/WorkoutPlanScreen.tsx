@@ -1,10 +1,4 @@
-/**
- * WorkoutPlanScreen
- * Main screen showing the 7-day workout plan
- * Displays week view with all days and toggle to switch views
- */
-
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   ScrollView,
@@ -12,219 +6,190 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  TouchableOpacity,
+  Image,
+  Dimensions,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useWorkout } from '../contexts/WorkoutContext';
-import { DayCard } from '../components/DayCard';
-import { ViewModeToggle } from '../components/ViewModeToggle';
 import { ScreenContainer } from '../components/ScreenContainer';
-import { COLORS, SPACING, BORDER_RADIUS } from '../constants/theme';
+import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { DAY_NAMES, WorkoutDay } from '../types/workout';
 
-interface WorkoutPlanScreenProps {
-  navigation?: any;
-}
+const WORKOUT_IMAGE =
+  'https://plus.unsplash.com/premium_photo-1664910764486-bed06a30a71b?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D';
 
-export const WorkoutPlanScreen: React.FC<WorkoutPlanScreenProps> = ({ navigation }) => {
-  const {
-    plan,
-    loading,
-    error,
-    viewMode,
-    setViewMode,
-    selectDay,
-    getCurrentDayOfWeek,
-    completedSessions,
-    getDayProgress,
-    fetchPlan,
-  } = useWorkout();
+const REST_IMAGE =
+  'https://plus.unsplash.com/premium_photo-1674675646818-01d7a7bae64c?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8dGhpJUUxJUJCJTgxbnxlbnwwfHwwfHx8MA%3D%3D';
 
-  const [dayProgresses, setDayProgresses] = useState<{ [key: number]: number }>({});
+export const WorkoutPlanScreen = ({ navigation }: any) => {
+  const { plan, loading, error, getCurrentDayOfWeek, fetchPlan } = useWorkout();
   const [refreshing, setRefreshing] = useState(false);
 
-  const currentDay = getCurrentDayOfWeek();
-
-  // Load day progress
-  useEffect(() => {
-    loadDayProgresses();
-  }, [plan, completedSessions]);
-
-  const loadDayProgresses = async () => {
-    if (!plan) return;
-
-    const progresses: { [key: number]: number } = {};
-    for (const day of plan.plan) {
-      const progress = await getDayProgress(day.day);
-      progresses[day.day] = progress;
-    }
-    setDayProgresses(progresses);
-  };
+  const currentDay = plan?.currentDay ?? plan?.plan?.find(d => !d.completed)?.day ?? 1;
 
   const onRefresh = async () => {
     setRefreshing(true);
-    try {
-      await fetchPlan();
-    } finally {
-      setRefreshing(false);
-    }
+    await fetchPlan();
+    setRefreshing(false);
   };
 
   const handleDayPress = (dayNumber: number) => {
-    selectDay(dayNumber);
     navigation?.navigate('DayDetail', { dayNumber });
   };
 
   const handleStartPress = (dayNumber: number) => {
-    selectDay(dayNumber);
     navigation?.navigate('DayDetail', { dayNumber });
   };
 
-  // Loading state
+  // Loading
   if (loading && !plan) {
     return (
       <ScreenContainer>
-        <View style={styles.centerContainer}>
+        <View style={styles.center}>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Đang tải kế hoạch tập luyện...</Text>
+          <Text style={styles.text}>Đang tải kế hoạch...</Text>
         </View>
       </ScreenContainer>
     );
   }
 
-  // Error state
-  if (error) {
+  // Error
+   if (error) {
     return (
       <ScreenContainer>
-        <View style={styles.centerContainer}>
-          <MaterialCommunityIcons
-            name="alert-circle"
-            size={48}
-            color={COLORS.error}
-          />
+        <View style={styles.center}>
           <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={onRefresh}>
+            <Text style={styles.retryText}>Thử lại</Text>
+          </TouchableOpacity>
         </View>
       </ScreenContainer>
     );
   }
 
-  if (!plan) {
+  // Empty
+  if (!plan || !plan.plan) {
     return (
       <ScreenContainer>
-        <View style={styles.centerContainer}>
-          <Text style={styles.emptyText}>Không có kế hoạch tập luyện</Text>
+        <View style={styles.center}>
+          <Text style={styles.text}>Không có kế hoạch</Text>
         </View>
       </ScreenContainer>
     );
   }
-
-  // Calculate total stats
-  const totalDays = plan.plan.length;
-  const workoutDays = plan.plan.filter(d => d.type === 'workout').length;
-  const restDays = plan.plan.filter(d => d.type === 'rest').length;
 
   return (
     <ScreenContainer>
       <ScrollView
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
       >
-        {/* Header Section */}
-        <View style={styles.headerSection}>
+        {/* Header */}
+        <View>
           <Text style={styles.title}>Kế hoạch tập luyện</Text>
-          <Text style={styles.subtitle}>Tuần tập của bạn</Text>
-
-          {/* Stats */}
-          <View style={styles.statsContainer}>
-            <View style={styles.statCard}>
-              <MaterialCommunityIcons
-                name="calendar-week"
-                size={20}
-                color={COLORS.primary}
-              />
-              <Text style={styles.statValue}>{totalDays}</Text>
-              <Text style={styles.statLabel}>Ngày</Text>
-            </View>
-
-            <View style={styles.statCard}>
-              <MaterialCommunityIcons
-                name="dumbbell"
-                size={20}
-                color={COLORS.accent}
-              />
-              <Text style={styles.statValue}>{workoutDays}</Text>
-              <Text style={styles.statLabel}>Tập luyện</Text>
-            </View>
-
-            <View style={styles.statCard}>
-              <MaterialCommunityIcons
-                name="bed"
-                size={20}
-                color={COLORS.secondary}
-              />
-              <Text style={styles.statValue}>{restDays}</Text>
-              <Text style={styles.statLabel}>Nghỉ</Text>
-            </View>
-          </View>
+          <Text style={styles.subtitle}>Tuần của bạn</Text>
         </View>
 
-        {/* View Mode Toggle */}
-        <ViewModeToggle mode={viewMode} onToggle={setViewMode} />
-
-        {/* Days List */}
-        <View style={styles.daysContainer}>
-          {plan.plan.map((day) => {
-            const isCurrentDay = day.day === currentDay;
-            const isCompleted =
-              dayProgresses[day.day] === 100 && day.type === 'workout';
-
-            return (
-              <DayCard
-                key={day.day}
-                day={day}
-                dayNumber={day.day}
-                isCurrentDay={isCurrentDay}
-                isCompleted={isCompleted}
-                onPress={() => handleDayPress(day.day)}
-                onStartPress={() => handleStartPress(day.day)}
-                completionPercentage={dayProgresses[day.day] || 0}
-              />
-            );
-          })}
+        {/* List */}
+        <View style={styles.list}>
+          {plan.plan.map((day: WorkoutDay, index: number) => (
+            <DayItem
+              key={day.day}
+              day={day}
+              index={index}
+              planLength={plan.plan.length}
+              currentDay={currentDay}
+              isCurrentDay={day.day === currentDay}
+              onPress={() => handleDayPress(day.day)}
+              onStart={() => handleStartPress(day.day)}
+            />
+          ))}
         </View>
 
-        {/* Footer spacing */}
-        <View style={{ height: SPACING.xl }} />
+        <View style={{ height: 40 }} />
       </ScrollView>
     </ScreenContainer>
   );
 };
 
+const DayItem = ({
+  day,
+  index,
+  planLength,
+  isCurrentDay,
+  onPress,
+  onStart,
+  currentDay,
+}: any) => {
+  const isRest = day.type === 'rest';
+  const isPast = day.day < currentDay;
+
+  return (
+    <View style={styles.row}>
+      {/* Timeline */}
+      <View style={styles.timeline}>
+        <View
+          style={[
+            styles.dot,
+            (isPast || isCurrentDay) && { backgroundColor: COLORS.primary },
+          ]}
+        />
+
+        {index !== planLength && (
+          <View
+            style={[
+              styles.line,
+              (isPast || isCurrentDay) && {
+                backgroundColor: COLORS.primary,
+              },
+            ]}
+          />
+        )}
+      </View>
+
+      {/* Card */}
+      <TouchableOpacity style={styles.dayCard} onPress={onPress}>
+        <Image
+          source={{ uri: isRest ? REST_IMAGE : WORKOUT_IMAGE }}
+          style={styles.banner}
+        />
+
+        <View style={styles.cardContent}>
+          <Text style={styles.dayTitle}>Ngày {day.day}</Text>
+
+          {isRest ? (
+            <Text style={styles.restText}>Ngày nghỉ</Text>
+          ) : (
+            <Text style={styles.meta}>
+              {day.totalDuration} phút | {day.totalCalories} kcal
+            </Text>
+          )}
+
+          {isCurrentDay && !isRest && (
+            <TouchableOpacity style={styles.startBtnBig} onPress={onStart}>
+              <Text style={styles.startTextBig}>BẮT ĐẦU NGAY</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
 const styles = StyleSheet.create({
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: SPACING.md,
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  text: { marginTop: 10, color: COLORS.textSecondary },
+  errorText: { color: COLORS.error, marginTop: 10 },
+  retryBtn: {
+    marginTop: 16,
+    padding: 10,
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
   },
-  loadingText: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    fontWeight: '500',
-  },
-  errorText: {
-    fontSize: 16,
-    color: COLORS.error,
-    textAlign: 'center',
-    fontWeight: '600',
-    marginTop: SPACING.md,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-  },
-  headerSection: {
-    marginBottom: SPACING.lg,
-  },
+  retryText: { color: '#fff' },
+
+  header: { marginBottom: 20 },
   title: {
     fontSize: 28,
     fontWeight: '700',
@@ -232,36 +197,103 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 16,
     color: COLORS.textSecondary,
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.lg,
   },
-  statsContainer: {
+
+  content: { padding: 10 },
+  dayName: { fontWeight: '600' },
+  restText: {
+    color: COLORS.textMuted,
+    fontStyle: 'italic',
+  },
+
+  startBtn: {
+    marginTop: 8,
+    backgroundColor: COLORS.primary,
+    padding: 6,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  startText: { color: '#fff', fontSize: 12 },
+
+  list: {
+    marginTop: 10,
+  },
+
+  row: {
     flexDirection: 'row',
-    gap: SPACING.md,
+    marginBottom: 20,
   },
-  statCard: {
+
+  /* Timeline */
+  timeline: {
+    width: 30,
+    alignItems: 'center',
+  },
+
+  dot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: COLORS.border,
+  },
+
+  line: {
+    width: 2,
+    flex: 1,
+    backgroundColor: COLORS.border,
+    marginTop: 2,
+  },
+
+  /* Card */
+  dayCard: {
     flex: 1,
     backgroundColor: COLORS.surface,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.sm,
-    borderRadius: BORDER_RADIUS.md,
-    alignItems: 'center',
-    gap: SPACING.xs,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderRadius: 16,
+    overflow: 'hidden',
+    ...SHADOWS.sm,
   },
-  statValue: {
+
+  banner: {
+    width: '100%',
+    height: 140,
+  },
+
+  doneBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: COLORS.primary,
+    borderRadius: 20,
+    padding: 6,
+  },
+
+  cardContent: {
+    padding: 16,
+  },
+
+  dayTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.text,
+    marginBottom: 4,
   },
-  statLabel: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    fontWeight: '500',
+
+  meta: {
+    color: COLORS.textMuted,
   },
-  daysContainer: {
-    gap: SPACING.sm,
+
+  startBtnBig: {
+    marginTop: 12,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 14,
+    borderRadius: 30,
+    alignItems: 'center',
+  },
+
+  startTextBig: {
+    color: '#fff',
+    fontWeight: '700',
   },
 });

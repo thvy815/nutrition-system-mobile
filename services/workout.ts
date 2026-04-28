@@ -4,7 +4,7 @@
  */
 
 import { api } from './api';
-import { WorkoutPlanResponse, WorkoutPlan } from '../types/workout';
+import { WorkoutPlanResponse, WorkoutPlan, ExerciseDetail } from '../types/workout';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MOCK_WORKOUT_PLAN, USE_MOCK_DATA } from '../constants/workoutMockData';
 
@@ -15,7 +15,7 @@ export const workoutService = {
   /**
    * Fetch workout plan from API
    */
-  async getWorkoutPlan(): Promise<WorkoutPlan> {
+  async getWorkoutPlan(token?: string): Promise<WorkoutPlan> {
     try {
       // Use mock data if enabled
       if (USE_MOCK_DATA) {
@@ -24,7 +24,7 @@ export const workoutService = {
         return MOCK_WORKOUT_PLAN;
       }
 
-      const { data } = await api.get<WorkoutPlanResponse>('/api/workout/plan');
+      const { data } = await api.get<WorkoutPlanResponse>('/workout-plan/current', token);
       if (data.success) {
         // Cache locally
         await AsyncStorage.setItem(WORKOUT_STORAGE_KEY, JSON.stringify(data.data));
@@ -32,16 +32,31 @@ export const workoutService = {
       }
       throw new Error('Failed to fetch workout plan');
     } catch (error) {
+      console.error('Error fetching workout plan:', error);
       // Fallback to cached data
       const cached = await AsyncStorage.getItem(WORKOUT_STORAGE_KEY);
       if (cached) {
+        console.warn('Using cached workout plan');
         return JSON.parse(cached);
       }
 
-      // Final fallback: use mock data
-      console.warn('API failed, using mock data as fallback');
+      // Final fallback: use mock data only if API fails
+      console.warn('API failed and no cache available, using mock data as fallback');
       await AsyncStorage.setItem(WORKOUT_STORAGE_KEY, JSON.stringify(MOCK_WORKOUT_PLAN));
       return MOCK_WORKOUT_PLAN;
+    }
+  },
+
+  /**
+   * Fetch exercise detail from API
+   */
+  async getExerciseDetail(exerciseId: number): Promise<ExerciseDetail> {
+    try {
+      const { data } = await api.get<ExerciseDetail>(`/exercises/${exerciseId}`);
+      return data;
+    } catch (error) {
+      console.error('Error fetching exercise detail:', error);
+      throw error;
     }
   },
 

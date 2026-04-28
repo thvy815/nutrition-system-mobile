@@ -168,4 +168,4 @@ export const MOCK_WORKOUT_PLAN: WorkoutPlan = {
  * Set USE_MOCK_DATA = false for production
  */
 
-export const USE_MOCK_DATA = true; // Toggle during development
+export const USE_MOCK_DATA = false; // Toggle during development
