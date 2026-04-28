@@ -6,7 +6,6 @@ import {
   DashboardScreen,
   FoodAnalysisScreen,
   MealRecommendationScreen,
-  WorkoutRecommendationScreen,
   AIChatbotScreen,
   UserProfileScreen,
   WorkoutPlanScreen,
@@ -19,7 +18,6 @@ export type RootTabParamList = {
   Dashboard: undefined;
   FoodAnalysis: undefined;
   MealRecommendation: undefined;
-  WorkoutRecommendation: undefined;
   WorkoutPlan: undefined;
   AIChatbot: undefined;
   UserProfile: undefined;
@@ -110,19 +108,9 @@ export function AppNavigator() {
         name="WorkoutPlan"
         component={WorkoutPlanStackNavigator}
         options={{
-          tabBarLabel: 'Kế hoạch',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="dumbbell" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="WorkoutRecommendation"
-        component={WorkoutRecommendationScreen}
-        options={{
           tabBarLabel: 'Tập luyện',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="barbell" size={size} color={color} />
+            <MaterialCommunityIcons name="dumbbell" size={size} color={color} />
           ),
         }}
       />
