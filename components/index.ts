@@ -5,3 +5,5 @@ export { ScreenContainer } from './ScreenContainer';
 export { DayCard } from './DayCard';
 export { ExerciseItem } from './ExerciseItem';
 export { ViewModeToggle } from './ViewModeToggle';
+export { MealCard } from './MealCard';
+export { RecipeSearchSheet } from './RecipeSearchSheet';
