@@ -6,3 +6,5 @@ export { DayCard } from './DayCard';
 export { ExerciseItem } from './ExerciseItem';
 export { ExerciseListItem } from './ExerciseListItem';
 export { ViewModeToggle } from './ViewModeToggle';
+export { MealCard } from './MealCard';
+export { RecipeSearchSheet } from './RecipeSearchSheet';

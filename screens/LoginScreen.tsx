@@ -47,7 +47,6 @@ export function LoginScreen() {
       setIsLoading(false);
     }
   };
-
   return (
     <KeyboardAvoidingView
       style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}

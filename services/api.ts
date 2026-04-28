@@ -59,9 +59,17 @@ export const api = {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     }),
 
-  delete: <T>(endpoint: string, token?: string) =>
+  delete: <T>(endpoint: string, body?: object, token?: string) =>
     request<T>(endpoint, {
       method: 'DELETE',
+      body,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }),
+
+  patch: <T>(endpoint: string, body?: object, token?: string) =>
+    request<T>(endpoint, {
+      method: 'PATCH',
+      body,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     }),
 };
