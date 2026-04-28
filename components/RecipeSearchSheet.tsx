@@ -52,7 +52,6 @@ export function RecipeSearchSheet({
 
     const timeout = setTimeout(async () => {
       setLoading(true);
-      console.log('Search query:', query);
       try {
         const result = await searchRecipesByIngredient({
           keyword: query,
