@@ -7,23 +7,34 @@ export type ApiError = {
 
 async function request<T>(
   endpoint: string,
-  options: Omit<RequestInit, 'body'> & { body?: object } = {}
+  options: Omit<RequestInit, 'body'> & { body?: any } = {} // Đổi body thành any để nhận FormData
 ): Promise<{ data: T; status: number }> {
   const { body, ...fetchOptions } = options;
   const url = `${API_BASE_URL}${endpoint}`;
 
-  const config: RequestInit = {
-    ...fetchOptions,
-    headers: {
-      'Content-Type': 'application/json',
-      ...fetchOptions.headers,
-    },
+  const headers: Record<string, string> = {
+    ...((fetchOptions.headers as Record<string, string>) || {}),
   };
 
-  if (body && typeof body === 'object') {
-    (config as { body?: string }).body = JSON.stringify(body);
+  const config: RequestInit = {
+    ...fetchOptions,
+  };
+
+  // KIỂM TRA BODY
+  if (body instanceof FormData) {
+    // Nếu là FormData: 
+    // 1. KHÔNG SET Content-Type (để Fetch tự điền cùng boundary)
+    // 2. KHÔNG stringify body
+    config.body = body;
+    // Đảm bảo không có Content-Type: application/json bị ghi đè vào
+    delete headers['Content-Type'];
+  } else if (body && typeof body === 'object') {
+    // Nếu là Object bình thường: Set JSON
+    headers['Content-Type'] = 'application/json';
+    config.body = JSON.stringify(body);
   }
 
+  config.headers = headers;
   const response = await fetch(url, config);
   const data = await response.json().catch(() => ({}));
 

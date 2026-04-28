@@ -1,38 +1,39 @@
 import { api } from './api';
 import type { Meal } from '../types';
+export type Nutrition = {
+  calories: number;
+  protein: number;
+  fat: number;
+  carbs: number;
+  fiber?: number;
+  sugar?: number;
+  sodium?: number;
+};
+
+export type Ingredient = {
+  _id: string;
+  name: string;
+  quantity: {
+    amount: number;
+    unit: string;
+    originalAmount?: number;
+    originalUnit?: string;
+  };
+};
 
 export type Recipe = {
   _id: string;
   name: string;
-  description: string;
-  imageUrl: string;
-  category: string;
-  servings: number;
-  totalNutrition: {
-    calories: number;
-    protein: number;
-    fat: number;
-    carbs: number;
-    fiber?: number;
-    sugar?: number;
-    sodium?: number;
-  };
-  totalNutritionPerServing?: {
-    calories: number;
-    protein: number;
-    fat: number;
-    carbs: number;
-  };
-  ingredients: Array<{
-    name: string;
-    amount: number;
-    unit: string;
-  }>;
+  description?: string;
+  imageUrl?: string;
+  category?: string;
+  servings?: number;
+  totalNutrition?: Nutrition;
+  totalNutritionPerServing?: Partial<Nutrition>; // Tái sử dụng Nutrition và biến các field thành optional
+  ingredients: Ingredient[];
   instructions: string[];
-  mealSources: string[];
+  mealSources?: string[];
   deleted?: boolean;
-  createdAt: string;
-  updatedAt: string;
 };
 
 export type RecipeListResponse = {
@@ -52,6 +53,93 @@ export type RecipeDetailResponse = {
   success: boolean;
   data: Recipe;
 };
+export type RecipeDetectedResponse = {
+  success: boolean;
+  detectedFoodName: string;
+}
+export type IngrAndInstrResponse = {
+  name: string;
+  ingredients: Ingredient[];
+  instructions: string[];
+  servings?: number;
+}
+
+// Dữ liệu gửi đi (Request Body)
+export interface ExtractIngredientsRequest {
+  recipe: string;
+  servings?: number;
+}
+export const findIngredientsByAi = async (
+  recipeText: string,
+  token: string,
+  servings?: number
+): Promise<Ingredient[]> => {
+  try {
+    // Body gửi lên Backend
+    const body = {
+      recipe: recipeText,
+      servings: servings
+    };
+
+    const res = await api.post<{ ingredients: Ingredient[] }>(
+      '/recipes/ai/extract-ingredients',
+      body,
+      token
+    );
+
+    return res.data.ingredients;
+  } catch (error: any) {
+    console.error("Lỗi khi AI trích xuất nguyên liệu:", error);
+    throw error;
+  }
+};
+
+export const getIngredientsAndInstructionsInAi = async (
+  foodName: string,
+  token: string
+): Promise<Recipe | null> => {
+  try {
+    const res = await api.get<Recipe>(
+      `/recipes/ai/recommendations/${encodeURIComponent(foodName)}`,
+      token
+    );
+    return res.data;
+  } catch (error: any) {
+    // Nếu lỗi là 404 (Không tìm thấy), ta return null thay vì ném lỗi
+    console.error(">>>error trong getIngredientsAndInstructionsInAi:", error)
+    if (error.status === 404) {
+      return null;
+    }
+
+    return null;
+  }
+};
+
+export async function detectRecipe(imageAsset: any, token: string): Promise<RecipeDetectedResponse> {
+  const formData = new FormData();
+
+  const uri = imageAsset.uri;
+  // Một số phiên bản cũ cần: uri.replace('file://', '') 
+  // Nhưng với Expo Image Picker mới nhất, hãy giữ nguyên và đảm bảo các trường sau:
+
+  formData.append('foodImage', {
+    uri: uri,
+    name: imageAsset.fileName || uri.split('/').pop() || 'photo.jpg',
+    type: imageAsset.mimeType || 'image/jpeg',
+  } as any);
+
+  try {
+    const res = await api.post<RecipeDetectedResponse>(
+      '/recipes/ai/search-by-image',
+      formData, // Lúc này api.ts đã sửa sẽ không stringify cái này
+      token
+    );
+
+    return (res as any).data;
+  } catch (error) {
+    throw error;
+  }
+}
 
 // Lấy danh sách recipe có phân trang
 export async function searchRecipes(
@@ -65,7 +153,7 @@ export async function searchRecipes(
   token: string
 ): Promise<{ recipes: Recipe[]; pagination: RecipeListResponse['data']['pagination'] }> {
   const queryParams = new URLSearchParams();
-  
+
   if (params.name) queryParams.append('name', params.name);
   if (params.page) queryParams.append('page', String(params.page));
   if (params.limit) queryParams.append('limit', String(params.limit));
@@ -74,15 +162,6 @@ export async function searchRecipes(
 
   const { data } = await api.get<RecipeListResponse>(
     `/recipe/search?${queryParams.toString()}`,
-    token
-  );
-  return data.data;
-}
-
-// Lấy chi tiết recipe theo ID
-export async function getRecipeById(recipeId: string, token: string): Promise<Recipe> {
-  const { data } = await api.get<RecipeDetailResponse>(
-    `/recipe/${recipeId}`,
     token
   );
   return data.data;
@@ -113,7 +192,7 @@ export async function searchRecipesByIngredient(
 // Chuyển Recipe thành Meal format cho UI
 export function transformRecipeToMeal(recipe: Recipe): Meal {
   const nutrition = recipe.totalNutritionPerServing || recipe.totalNutrition;
-  
+
   return {
     id: recipe._id,
     name: recipe.name,
@@ -123,4 +202,13 @@ export function transformRecipeToMeal(recipe: Recipe): Meal {
     carbs: nutrition?.carbs || 0,
     fat: nutrition?.fat || 0,
   };
+}
+
+// Lấy chi tiết recipe theo ID
+export async function getRecipeById(recipeId: string, token: string): Promise<Recipe> {
+  const { data } = await api.get<RecipeDetailResponse>(
+    `/recipe/${recipeId}`,
+    token
+  );
+  return data.data;
 }
