@@ -5,13 +5,19 @@ export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced';
 
 export interface Meal {
   id: string;
+  dailyMenuId?: string;
   name: string;
+  imageUrl?: string;
+  description?: string;
   calories: number;
   protein: number;
   carbs: number;
   fat: number;
   goalTag?: HealthGoal;
-  timeOfDay?: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  servingTime?: 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'other';
+  scale?: number;
+  isChecked?: boolean;
+  recipeId?: string;
 }
 
 export interface Workout {
