@@ -4,32 +4,28 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card, ScreenContainer } from '../components';
 import { useAuth } from '../contexts/AuthContext';
 import { COLORS, SPACING } from '../constants/theme';
-import { MOCK_USER_PROFILE } from '../constants/mockData';
-import type { HealthGoal, ActivityLevel, UserProfile } from '../types';
 import { fetchCurrentUser } from '../services/auth';
 import type { ApiError } from '../services/api';
+import { FitnessLevel, HealthGoal, UserProfile } from '../types/user';
 
 const GOAL_OPTIONS: { value: HealthGoal; label: string }[] = [
   { value: 'lose_weight', label: 'Giảm cân' },
   { value: 'gain_weight', label: 'Tăng cân' },
-  { value: 'maintain', label: 'Duy trì' },
-  { value: 'build_muscle', label: 'Tăng cơ' },
+  { value: 'maintain_weight', label: 'Duy trì' },
 ];
 
-const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string }[] = [
+const FITNESS_OPTIONS: { value: FitnessLevel; label: string }[] = [
   { value: 'sedentary', label: 'Ít vận động' },
-  { value: 'light', label: 'Nhẹ nhàng' },
-  { value: 'moderate', label: 'Trung bình' },
-  { value: 'active', label: 'Năng động' },
-  { value: 'very_active', label: 'Rất năng động' },
+  { value: 'beginner', label: 'Mới bắt đầu' },
+  { value: 'intermediate', label: 'Trung bình' },
+  { value: 'advanced', label: 'Nâng cao' },
+  { value: 'athlete', label: 'Vận động viên' },
 ];
 
 export function UserProfileScreen() {
   const { token, logout } = useAuth();
-  const [profile, setProfile] = useState<UserProfile>(MOCK_USER_PROFILE);
-  const [dietaryInput, setDietaryInput] = useState(
-    profile.dietaryRestrictions.join(', ')
-  );
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [dietaryInput, setDietaryInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,14 +41,18 @@ export function UserProfileScreen() {
         if (!isMounted) return;
 
         const mapped: UserProfile = {
-          ...profile,
-          age: me.age ?? profile.age,
-          gender: (me.gender as UserProfile['gender']) ?? profile.gender,
-          height: me.height ?? profile.height,
-          weight: me.weight ?? profile.weight,
-          activityLevel: profile.activityLevel,
-          healthGoal: (me.goal as HealthGoal) ?? profile.healthGoal,
-          dietaryRestrictions: me.allergies ?? profile.dietaryRestrictions,
+          name: me.name,
+          email: me.email,
+          isEmailVerified: me.isEmailVerified ?? false,
+
+          age: me.age ?? 0,
+          gender: (me.gender as UserProfile['gender']) ?? 'female',
+          height: me.height ?? 0,
+          weight: me.weight ?? 0,
+
+          fitnessLevel: (me.fitnessLevel as FitnessLevel) ?? 'sedentary',
+          healthGoal: (me.goal as HealthGoal) ?? 'maintain',
+          dietaryRestrictions: me.allergies ?? [],
         };
 
         setProfile(mapped);
@@ -79,11 +79,32 @@ export function UserProfileScreen() {
     };
   }, [token]);
 
-  const updateProfile = <K extends keyof typeof profile>(
+  const updateProfile = <K extends keyof UserProfile>(
     key: K,
-    value: (typeof profile)[K]
+    value: UserProfile[K]
   ) => {
-    setProfile((prev) => ({ ...prev, [key]: value }));
+    setProfile((prev) => (prev ? { ...prev, [key]: value } : prev));
+  };
+
+  if (!profile) {
+    return (
+      <ScreenContainer>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </ScreenContainer>
+    );
+  }
+
+  const bmiValue =
+    profile.height > 0
+      ? profile.weight / ((profile.height / 100) ** 2)
+      : 0;
+
+  const bmi = bmiValue.toFixed(1); // để hiển thị
+
+  const getBmiColor = (bmi: number) => {
+    if (bmi < 18.5) return COLORS.warning;
+    if (bmi < 25) return COLORS.success;
+    return COLORS.error;
   };
 
   return (
@@ -101,7 +122,36 @@ export function UserProfileScreen() {
 
       {/* Basic Info */}
       <Card style={styles.card}>
+        <Text style={styles.sectionTitle}>Tài khoản</Text>
+
+        <View style={styles.inputRow}>
+          <Text style={styles.label}>Email</Text>
+          <Text style={styles.valueText}>{profile?.email}</Text>
+        </View>
+
+        <View style={styles.inputRow}>
+          <Text style={styles.label}>Trạng thái</Text>
+          <Text
+            style={[
+              styles.valueText,
+              { color: profile?.isEmailVerified ? 'green' : 'orange' },
+            ]}
+          >
+            {profile?.isEmailVerified ? 'Đã xác thực' : 'Chưa xác thực'}
+          </Text>
+        </View>
+      </Card>
+
+      <Card style={styles.card}>
         <Text style={styles.sectionTitle}>Thông tin cơ bản</Text>
+        <View style={styles.inputRow}>
+          <Text style={styles.label}>Tên</Text>
+          <TextInput
+            style={styles.input}
+            value={profile.name}
+            onChangeText={(v) => updateProfile('name', v)}
+          />
+        </View>
         <View style={styles.inputRow}>
           <Text style={styles.label}>Tuổi</Text>
           <TextInput
@@ -155,23 +205,43 @@ export function UserProfileScreen() {
         </View>
       </Card>
 
+      {/* BMI */}
+      <Card style={styles.card}>
+        <View style={styles.calorieHeader}>
+          <Ionicons name="body" size={24} color={COLORS.secondary} />
+          <Text style={styles.cardTitle}>Chỉ số cơ thể</Text>
+        </View>
+
+        <View style={styles.statsRow}>
+          <View style={styles.stat}>
+            <Text style={styles.statValue}>{profile.weight} kg</Text>
+            <Text style={styles.statLabel}>Cân nặng</Text>
+          </View>
+
+          <View style={styles.stat}>
+            <Text style={[styles.statValue, { color: getBmiColor(bmiValue) }]}>{bmi}</Text>
+            <Text style={styles.statLabel}>BMI</Text>
+          </View>
+        </View>
+      </Card>
+
       {/* Activity Level */}
       <Card style={styles.card}>
         <Text style={styles.sectionTitle}>Mức độ vận động</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {ACTIVITY_OPTIONS.map((opt) => (
+          {FITNESS_OPTIONS.map((opt) => (
             <TouchableOpacity
               key={opt.value}
               style={[
                 styles.chip,
-                profile.activityLevel === opt.value && styles.chipActive,
+                profile.fitnessLevel === opt.value && styles.chipActive,
               ]}
-              onPress={() => updateProfile('activityLevel', opt.value)}
+              onPress={() => updateProfile('fitnessLevel', opt.value)}
             >
               <Text
                 style={[
                   styles.chipText,
-                  profile.activityLevel === opt.value && styles.chipTextActive,
+                  profile.fitnessLevel === opt.value && styles.chipTextActive,
                 ]}
               >
                 {opt.label}
@@ -200,7 +270,7 @@ export function UserProfileScreen() {
                     ? 'trending-down'
                     : opt.value === 'gain_weight'
                     ? 'trending-up'
-                    : opt.value === 'maintain'
+                    : opt.value === 'maintain_weight'
                     ? 'remove'
                     : 'barbell'
                 }
@@ -388,5 +458,47 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: COLORS.error,
+  },
+  valueText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: COLORS.text,
+  },
+  calorieHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: SPACING.sm,
+    paddingTop: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+
+  stat: {
+    alignItems: 'center',
+  },
+
+  statValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+
+  statLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.xs,
   },
 });

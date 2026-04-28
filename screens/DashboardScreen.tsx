@@ -8,35 +8,79 @@ import type { Meal, Workout } from '../types';
 
 export function DashboardScreen() {
   const { dailyCalorieTarget, caloriesConsumed, caloriesBurned, weight, bmi, todayMeals, todayWorkouts } = MOCK_DASHBOARD;
-  const remaining = dailyCalorieTarget - caloriesConsumed + caloriesBurned;
-
+  const net = caloriesConsumed - caloriesBurned;
+  const isOver = net > dailyCalorieTarget;
+  const isUnder = net < dailyCalorieTarget;
   return (
     <ScreenContainer>
-      <Text style={styles.title}>Bảng điều khiển</Text>
+      <Text style={styles.title}>Trang chủ</Text>
       <Text style={styles.subtitle}>Tổng quan sức khỏe của bạn</Text>
 
       {/* Calorie Summary */}
       <Card style={styles.card}>
         <View style={styles.calorieHeader}>
           <Ionicons name="flame" size={24} color={COLORS.accent} />
-          <Text style={styles.cardTitle}>Calo hàng ngày</Text>
+          <Text style={styles.cardTitle}>Cân bằng năng lượng</Text>
         </View>
+
+        {/* Calories eaten */}
         <ProgressBar
           value={caloriesConsumed}
           max={dailyCalorieTarget}
-          label="Đã ăn"
+          label={`Đã ăn: ${caloriesConsumed} / ${dailyCalorieTarget} kcal`}
           color={COLORS.primary}
         />
+
+        {/* Calories burned */}
+        <View style={{ marginTop: SPACING.md }}>
+          <ProgressBar
+            value={caloriesBurned}
+            max={dailyCalorieTarget}
+            label={`Đã đốt: ${caloriesBurned} kcal`}
+            color={COLORS.secondary}
+          />
+        </View>
+
+        {/* Net + Target comparison */}
         <View style={styles.statsRow}>
           <View style={styles.stat}>
-            <Text style={styles.statValue}>{caloriesBurned}</Text>
-            <Text style={styles.statLabel}>Đã đốt</Text>
+            <Text style={styles.statValue}>
+              {caloriesConsumed - caloriesBurned}
+            </Text>
+            <Text style={styles.statLabel}>Net kcal</Text>
           </View>
+
           <View style={styles.stat}>
-            <Text style={styles.statValue}>{remaining}</Text>
-            <Text style={styles.statLabel}>Còn lại</Text>
+            <Text style={styles.statValue}>
+              {dailyCalorieTarget}
+            </Text>
+            <Text style={styles.statLabel}>Mục tiêu</Text>
           </View>
         </View>
+        <Text
+          style={[
+            styles.balanceHint,
+            {
+              backgroundColor: isOver
+                ? '#FFE5E5'
+                : isUnder
+                ? '#FFF4E5'
+                : '#E5F0FF',
+
+              color: isOver
+                ? '#D93025'
+                : isUnder
+                ? '#B26A00'
+                : '#1A73E8',
+            },
+          ]}
+        >
+          {isOver
+            ? 'Vượt mục tiêu (dễ tăng cân)'
+            : isUnder
+            ? 'Chưa đạt mục tiêu (có thể giảm cân)'
+            : 'Cân bằng hoàn hảo'}
+        </Text>
       </Card>
 
       {/* Weight & BMI */}
@@ -129,7 +173,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
   cardTitle: {
     fontSize: 18,
@@ -139,7 +183,7 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginTop: SPACING.md,
+    marginTop: SPACING.sm,
     paddingTop: SPACING.md,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
@@ -214,5 +258,32 @@ const styles = StyleSheet.create({
   workoutStatText: {
     fontSize: 14,
     color: COLORS.textSecondary,
+  },
+  balanceBox: {
+    marginTop: SPACING.md,
+    padding: SPACING.sm,
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+  },
+
+  balanceText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+
+  balanceHint: {
+    marginTop: SPACING.md,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    alignSelf: 'center',
+
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+
+    backgroundColor: COLORS.background,
+    color: COLORS.text,
   },
 });

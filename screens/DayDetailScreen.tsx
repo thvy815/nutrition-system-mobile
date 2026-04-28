@@ -58,7 +58,7 @@ export const DayDetailScreen = ({ route, navigation }: any) => {
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <MaterialCommunityIcons name="clock-outline" size={18} color={COLORS.primary} />
-            <Text style={styles.statText}>{day.totalDuration} min</Text>
+            <Text style={styles.statText}>{day.totalDuration} phút</Text>
           </View>
 
           <View style={styles.statItem}>
@@ -107,7 +107,15 @@ export const DayDetailScreen = ({ route, navigation }: any) => {
         </View>
         <View style={{ padding: 16 }}>
           {day.exerciseDetails?.map((ex) => (
-            <View key={ex.exerciseId} style={styles.exerciseCard}>
+            <TouchableOpacity
+              key={ex.exerciseId}
+              style={styles.exerciseCard}
+              onPress={() =>
+                navigation.navigate('ExerciseDetail', {
+                  exerciseId: ex.exerciseId,
+                })
+              }
+            >
               <MaterialCommunityIcons name="dumbbell" size={22} />
 
               <View style={{ marginLeft: 10, flex: 1 }}>
@@ -120,10 +128,10 @@ export const DayDetailScreen = ({ route, navigation }: any) => {
                 </Text>
 
                 <Text style={styles.exerciseMeta}>
-                  {ex.sets} set • {ex.reps}
+                  {ex.sets} set • {ex.reps} lần
                 </Text>
               </View>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
 

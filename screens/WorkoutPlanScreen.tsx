@@ -156,7 +156,7 @@ const DayItem = ({
         />
 
         <View style={styles.cardContent}>
-          <Text style={styles.dayTitle}>Ngày {day.day}</Text>
+          <Text style={styles.dayTitle}>{DAY_NAMES(day.day)}</Text>
 
           {isRest ? (
             <Text style={styles.restText}>Ngày nghỉ</Text>

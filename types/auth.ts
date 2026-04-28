@@ -14,9 +14,8 @@ export interface LoginUser {
   weight?: number;
   goal?: string;
   allergies?: string[];
+  fitnessLevel?: string;
   isEmailVerified?: boolean;
-  createdAt?: string;
-  updatedAt?: string;
 }
 
 export interface LoginSuccessResponse {

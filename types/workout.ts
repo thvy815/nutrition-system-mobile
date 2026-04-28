@@ -94,4 +94,4 @@ export interface WorkoutSession {
   completedAt?: string;
 }
 
-export const DAY_NAMES = (day: number) => `Day ${day}`;
+export const DAY_NAMES = (day: number) => `Ngày ${day}`;

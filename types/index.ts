@@ -1,18 +1,7 @@
 export type HealthGoal = 'lose_weight' | 'gain_weight' | 'maintain' | 'build_muscle';
 
-export type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
-
 export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced';
 
-export interface UserProfile {
-  age: number;
-  gender: 'male' | 'female' | 'other';
-  height: number; // cm
-  weight: number; // kg
-  activityLevel: ActivityLevel;
-  healthGoal: HealthGoal;
-  dietaryRestrictions: string[];
-}
 
 export interface Meal {
   id: string;
@@ -69,9 +58,7 @@ export interface ChatMessage {
 // Workout types
 export type {
   DayType,
-  MuscleGroup,
   WorkoutLevel,
-  Exercise,
   WorkoutDay,
   WorkoutPlan,
   WorkoutPlanResponse,
