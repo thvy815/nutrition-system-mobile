@@ -20,7 +20,7 @@ export type RecipeRef =
 
 export type RecipeItem = {
   _id: string;
-  recipeId: RecipeRef;
+  recipeId: string;
   name: string;
   imageUrl?: string;
   scale?: number;

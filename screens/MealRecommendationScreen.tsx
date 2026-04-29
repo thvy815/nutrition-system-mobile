@@ -225,7 +225,7 @@ export function MealRecommendationScreen() {
   };
   const handleDeleteMeal = async (meal: Meal) => {
     if (!token || !menu) return;
-
+    console.log("dât trong DELETE:", meal.dailyMenuId, meal.id);
     try {
       const updated = await deleteRecipeFromMenu(
         {
@@ -304,13 +304,13 @@ const handleAddRecipeToMenu = async (params: any) => {
           <Text style={styles.nutritionTitle}>Dinh dưỡng hôm nay</Text>
 
           <Text style={styles.kcal}>
-            {Math.round(menu.totalNutrition?.calories || 0)} kcal
+            {Math.round((menu.totalNutrition?.calories || 0))} kcal
           </Text>
 
           <View style={styles.macros}>
-            <Text>Đạm: {menu.totalNutrition?.protein || 0}g</Text>
-            <Text>Carbs: {menu.totalNutrition?.carbs || 0}g</Text>
-            <Text>Béo: {menu.totalNutrition?.fat || 0}g</Text>
+            <Text>Đạm: {(menu.totalNutrition?.protein || 0).toFixed(1)}g</Text>
+            <Text>Carbs: {(menu.totalNutrition?.carbs || 0).toFixed(1)}g</Text>
+            <Text>Béo: {(menu.totalNutrition?.fat || 0).toFixed(1)}g</Text>
           </View>
         </View>
       )}
