@@ -14,7 +14,7 @@ import type { Meal } from '../types';
 // Lấy thực đơn theo ngày
 export async function getDailyMenuByDate(date: string, token: string): Promise<DailyMenuResponse['data'] | null> {
   try {
-    const { data } = await api.get<DailyMenuResponse>(`/daily-menu/by-date?date=${date}`, token);
+    const { data } = await api.get<DailyMenuResponse>(`/daily-menu/by-date?date=${date}`);
     return data?.data || null;
   } catch (error) {
     console.error('Error fetching daily menu by date:', error);
@@ -30,8 +30,7 @@ export async function getDailyMenusByRange(
 ): Promise<DailyMenuResponse['data'][]> {
   try {
     const { data } = await api.get<DailyMenuListResponse>(
-      `/daily-menu/by-range?startDate=${startDate}&endDate=${endDate}`,
-      token
+      `/daily-menu/by-range?startDate=${startDate}&endDate=${endDate}`
     );
     return data?.data || [];
   } catch (error) {
@@ -42,19 +41,20 @@ export async function getDailyMenusByRange(
 
 // Thêm món vào thực đơn
 export async function addRecipeToMenu(request: AddRecipeRequest, token: string): Promise<DailyMenuResponse['data']> {
-  const { data } = await api.post<DailyMenuResponse>('/daily-menu/add-recipe', request, token);
+  const { data } = await api.post<DailyMenuResponse>('/daily-menu/add-recipe', request);
   return data.data;
 }
 
 // Cập nhật món trong thực đơn
 export async function updateRecipeInMenu(request: UpdateRecipeRequest, token: string): Promise<DailyMenuResponse['data']> {
-  const { data } = await api.patch<DailyMenuResponse>('/daily-menu/update-recipe', request, token);
+  const { data } = await api.patch<DailyMenuResponse>('/daily-menu/update-recipe', request);
   return data.data;
 }
 
 // Xóa món khỏi thực đơn
 export async function deleteRecipeFromMenu(request: DeleteRecipeRequest, token: string): Promise<DailyMenuResponse['data']> {
-  const { data } = await api.delete<DailyMenuResponse>('/daily-menu/delete-recipe', request, token);
+  const { data } = await api.delete<DailyMenuResponse>('/daily-menu/delete-recipe', request);
+  console.log("dât trong DELETE:", data.data);
   return data.data;
 }
 
@@ -66,8 +66,7 @@ export async function getDailyMenuRecommendation(
   try {
     const { data } = await api.post<DailyMenuResponse>(
       '/daily-menu/recommendations/day',
-      { date },
-      token
+      { date }
     );
     return data?.data || null;
   } catch (error: any) {
@@ -87,8 +86,7 @@ export async function updateDailyMenuStatus(
 ): Promise<DailyMenuResponse['data']> {
   const { data } = await api.post<DailyMenuResponse>(
     '/daily-menu/update-status',
-    { dailyMenuId, newStatus },
-    token
+    { dailyMenuId, newStatus }
   );
   return data.data;
 }
