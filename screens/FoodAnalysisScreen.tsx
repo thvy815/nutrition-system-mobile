@@ -53,6 +53,7 @@ export function FoodAnalysisScreen() {
   }
 
   const handleDetectRecipe = async (imageAsset: any) => {
+    setImageResult(null);
     if (!token) return;
     setLoading(true);
     try {
@@ -72,17 +73,18 @@ export function FoodAnalysisScreen() {
             console.log(">>>Vao getIngredientsAndInstructionsInAi")
             const resultByAi = await getIngredientsAndInstructionsInAi(foodName, token);
 
-            const ingList = resultByAi?.ingredients || [];
-            const nameIngList = ingList.map((ing: any) => ({
-              name: ing.name
-            }));
-            const temp = await handleMapping(nameIngList);
-            setIngMappingResult(temp);
+            // const ingList = resultByAi?.ingredients || [];
+            // const nameIngList = ingList.map((ing: any) => ({
+            //   name: ing.name
+            // }));
+            // const temp = await handleMapping(nameIngList);
+            // setIngMappingResult(temp);
+
             setImageResult(resultByAi);
+            console.log(">>>resultByAi", resultByAi);
           } else {
             console.log(">>>Vao searchRecipesByIngredient")
             setImageResult(result.recipes[0]);
-            console.log(">>>imageResult:", result.recipes[0])
           }
 
         } catch (err) {
@@ -151,6 +153,7 @@ export function FoodAnalysisScreen() {
   // Thêm async ở đây ----------------
   const handleAnalyzeRecipe = async () => {
     if (!token) return;
+    setIngredientResult(null);
     setLoading(true);
 
     if (recipeText.trim()) {
@@ -272,13 +275,25 @@ export function FoodAnalysisScreen() {
             textAlignVertical="top"
           />
           <TouchableOpacity
-            style={[styles.analyzeButton, !recipeText.trim() && styles.analyzeButtonDisabled]}
+            style={[
+              styles.analyzeButton,
+              (!recipeText.trim() || loading) && styles.analyzeButtonDisabled
+            ]}
             onPress={handleAnalyzeRecipe}
-            disabled={!recipeText.trim()}
+            disabled={!recipeText.trim() || loading}
             activeOpacity={0.8}
           >
-            <Ionicons name="analytics" size={20} color="#FFF" />
-            <Text style={styles.analyzeButtonText}>Phân tích</Text>
+            {loading && !hasResult ? (
+              <>
+                <ActivityIndicator size="small" color="#FFF" />
+                <Text style={styles.analyzeButtonText}>Đang phân tích...</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="analytics" size={20} color="#FFF" />
+                <Text style={styles.analyzeButtonText}>Phân tích</Text>
+              </>
+            )}
           </TouchableOpacity>
         </Card>
       )}
@@ -288,11 +303,6 @@ export function FoodAnalysisScreen() {
         <View style={styles.resultsSection}>
           {imageResult && (
             <>
-              <Card style={styles.resultCard}>
-                <Text style={styles.resultLabel}>Món ăn phát hiện</Text>
-                <Text style={styles.resultTitle}>{imageResult.name}</Text>
-              </Card>
-
               <Card style={styles.resultCard}>
                 <Text style={styles.resultLabel}>Nguyên liệu dự kiến</Text>
                 {imageResult.ingredients.map((ing, i) => (
@@ -334,7 +344,7 @@ export function FoodAnalysisScreen() {
             </>
           )}
 
-          {ingredientResult && (
+          {ingredientResult && !loading && (
             <>
               <Text style={styles.sectionTitle}>Nguyên liệu</Text>
               {ingredientResult?.map((ing, i) => (

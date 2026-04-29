@@ -94,7 +94,6 @@ export const getMappingIngredients = async (
     const res = await api.post<MappingResponse>(
       'http://192.168.31.206:8000/search_batch',
       body,
-      token
     );
     const allMappedIngredients: MappedIngredient[] = res.data.results.flatMap(
       (batch) => batch.results[0]
@@ -118,7 +117,6 @@ export async function findIngredientById(
 ): Promise<Ingredient> {
   const { data } = await api.get<Ingredient>(
     `/recipe/ingredients/${params.ingredientId}`,
-    token
   );
   return data;
 }
@@ -137,9 +135,7 @@ export const findIngredientsByAi = async (
 
     const res = await api.post<{ ingredients: Ingredient[] }>(
       '/recipes/ai/extract-ingredients',
-      body,
-      token
-    );
+      body    );
 
     return res.data.ingredients;
   } catch (error: any) {
@@ -155,7 +151,6 @@ export const getIngredientsAndInstructionsInAi = async (
   try {
     const res = await api.get<Recipe>(
       `/recipes/ai/recommendations/${encodeURIComponent(foodName)}`,
-      token
     );
     return res.data;
   } catch (error: any) {
@@ -186,7 +181,6 @@ export async function detectRecipe(imageAsset: any, token: string): Promise<Reci
     const res = await api.post<RecipeDetectedResponse>(
       '/recipes/ai/search-by-image',
       formData, // Lúc này api.ts đã sửa sẽ không stringify cái này
-      token
     );
 
     return (res as any).data;
@@ -216,7 +210,6 @@ export async function searchRecipes(
 
   const { data } = await api.get<RecipeListResponse>(
     `/recipe/search?${queryParams.toString()}`,
-    token
   );
   return data.data;
 }
@@ -238,7 +231,6 @@ export async function searchRecipesByIngredient(
 
   const { data } = await api.get<RecipeListResponse>(
     `/recipes/search/by-ingredient?${queryParams.toString()}`,
-    token
   );
   return data.data;
 }
@@ -262,7 +254,6 @@ export function transformRecipeToMeal(recipe: Recipe): Meal {
 export async function getRecipeById(recipeId: string, token: string): Promise<Recipe> {
   const { data } = await api.get<RecipeDetailResponse>(
     `/recipe/${recipeId}`,
-    token
   );
   return data.data;
 }
