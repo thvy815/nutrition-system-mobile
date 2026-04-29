@@ -21,6 +21,10 @@ import { ExerciseDetail, WorkoutSessionData } from '../types/workout';
 
 const { width, height } = Dimensions.get('window');
 
+const stripHtml = (html: string) => {
+  return html ? html.replace(/<[^>]*>/g, '') : '';
+};
+
 interface SessionState {
   isRunning: boolean;
   isPaused: boolean;
@@ -54,7 +58,6 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
 
   const timerInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionId = useRef<string | null>(null);
-  const [selectedIntensity, setSelectedIntensity] = useState<'light' | 'moderate' | 'intense'>('moderate');
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   // Get exercise details and sets info
@@ -114,7 +117,7 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
       const sessionData = await workoutService.startWorkoutSession(
         user._id,
         exerciseId,
-        selectedIntensity
+        'moderate'
       );
       
       sessionId.current = sessionData._id;
@@ -206,20 +209,6 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const nextImage = () => {
-    if (exercise?.images && exercise.images.length > 0) {
-      setCurrentImageIndex((prev) => (prev + 1) % exercise.images.length);
-    }
-  };
-
-  const previousImage = () => {
-    if (exercise?.images && exercise.images.length > 0) {
-      setCurrentImageIndex((prev) => 
-        prev === 0 ? exercise.images.length - 1 : prev - 1
-      );
-    }
   };
 
   if (loading) {
@@ -382,36 +371,6 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
           </View>
         )}
 
-        {/* Intensity Selector - only show before starting */}
-        {!hasStarted && (
-          <View style={styles.intensitySection}>
-            <Text style={styles.intensityLabel}>Chọn cường độ tập</Text>
-            <View style={styles.intensityButtons}>
-              {(['light', 'moderate', 'intense'] as const).map((intensity) => (
-                <TouchableOpacity
-                  key={intensity}
-                  style={[
-                    styles.intensityBtn,
-                    selectedIntensity === intensity && styles.intensityBtnActive,
-                  ]}
-                  onPress={() => setSelectedIntensity(intensity)}
-                >
-                  <Text
-                    style={[
-                      styles.intensityBtnText,
-                      selectedIntensity === intensity && styles.intensityBtnTextActive,
-                    ]}
-                  >
-                    {intensity === 'light' && 'Nhẹ'}
-                    {intensity === 'moderate' && 'Trung bình'}
-                    {intensity === 'intense' && 'Nặng'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
-
         {/* Action Buttons */}
         <View style={styles.buttonSection}>
           {!hasStarted ? (
@@ -450,7 +409,7 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
         {exercise.description && (
           <View style={styles.descriptionSection}>
             <Text style={styles.descriptionTitle}>Hướng dẫn</Text>
-            <Text style={styles.description}>{exercise.description}</Text>
+            <Text style={styles.description}>{stripHtml(exercise.description)}</Text>
           </View>
         )}
 
