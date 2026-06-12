@@ -15,6 +15,7 @@ import type { Meal } from '../types';
 export async function getDailyMenuByDate(date: string, token: string): Promise<DailyMenuResponse['data'] | null> {
   try {
     const { data } = await api.get<DailyMenuResponse>(`/daily-menu/by-date?date=${date}`);
+    console.log("data trong getDailyMenuByDate:", data.data);
     return data?.data || null;
   } catch (error) {
     console.error('Error fetching daily menu by date:', error);

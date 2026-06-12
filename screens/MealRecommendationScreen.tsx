@@ -30,7 +30,7 @@ const MEAL_LABELS = {
 export function MealRecommendationScreen() {
   const navigation = useNavigation();
   const { token } = useAuth();
-  const [plan, setPlan] = useState<'daily' | 'weekly'>('daily');
+  // const [plan, setPlan] = useState<'daily' | 'weekly'>('daily');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [menu, setMenu] = useState<DailyMenuResponse['data'] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -54,79 +54,9 @@ export function MealRecommendationScreen() {
     return groups;
   }
 
-  const fetchDailyMenu = useCallback(async (date: string) => {
-    if (!token) return;
-
-    setLoading(true);
-    try {
-      const data = await getDailyMenuByDate(date, token);
-      setMenu(data);
-    } catch (error) {
-      console.error('Error fetching daily menu:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
-
-  const fetchRecommendation = useCallback(async (date: string) => {
-    if (!token) return;
-
-    setLoading(true);
-    try {
-      const data = await getDailyMenuRecommendation(date, token);
-      setMenu(data);
-    } catch (error) {
-      console.error('Error fetching recommendation:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
-
-  useEffect(() => {
-    if (plan === 'daily') {
-      fetchDailyMenu(selectedDate);
-    } else {
-      fetchRecommendation(selectedDate);
-    }
-  }, [plan, selectedDate, fetchDailyMenu, fetchRecommendation]);
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    if (plan === 'daily') {
-      await fetchDailyMenu(selectedDate);
-    } else {
-      await fetchRecommendation(selectedDate);
-    }
-    setRefreshing(false);
-  }, [plan, selectedDate, fetchDailyMenu, fetchRecommendation]);
-
   const meals: Meal[] = menu ? transformDailyMenuToMeals(menu) : [];
   console.log("meals:", meals[0])
   const groupedMeals = groupMealsByServingTime(meals);
-
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Ionicons name="restaurant-outline" size={64} color={COLORS.textSecondary} />
-      <Text style={styles.emptyText}>Chưa có thực đơn cho ngày này</Text>
-
-      {/* Divider */}
-      <View style={styles.dividerRow}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>hoặc</Text>
-        <View style={styles.dividerLine} />
-      </View>
-
-      {/* AI gợi ý */}
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={() => fetchRecommendation(selectedDate)}
-      >
-        <Ionicons name="bulb-outline" size={20} color="#FFF" />
-        <Text style={styles.primaryText}>Lấy gợi ý thực đơn</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
 
   const [weekData, setWeekData] = useState<any[]>([]);
 
@@ -182,28 +112,70 @@ export function MealRecommendationScreen() {
   }, [token, selectedDate]);
 
   // ===== fetch day =====
-  const fetchDay = useCallback(async (date: string) => {
-    if (!token) return;
+  
+ const fetchDay = useCallback(async (date: string) => {
+  if (!token) return;
+  setLoading(true);
+  try {
+    const data = await getDailyMenuByDate(date, token);
+    setMenu(data);
+  } catch {
+    setMenu(null);
+  } finally {
+    setLoading(false);
+  }
+}, [token]);
 
-    setLoading(true);
-    try {
-      const data = await getDailyMenuByDate(date, token);
-      setMenu(data);
-    } catch {
-      setMenu(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
+ useEffect(() => {
+  fetchWeek();
+}, [fetchWeek]);
 
-  // ===== effects =====
-  useEffect(() => {
-    fetchWeek();
-  }, [fetchWeek]);
+useEffect(() => {
+  fetchDay(selectedDate);
+}, [selectedDate, fetchDay]);
 
-  useEffect(() => {
-    fetchDay(selectedDate);
-  }, [selectedDate, fetchDay]);
+
+  const renderEmpty = () => (
+    <View style={styles.emptyContainer}>
+      <Ionicons name="restaurant-outline" size={64} color={COLORS.textSecondary} />
+      <Text style={styles.emptyText}>Chưa có thực đơn cho ngày này</Text>
+
+      {/* Divider */}
+      <View style={styles.dividerRow}>
+        <View style={styles.dividerLine} />
+        <Text style={styles.dividerText}>hoặc</Text>
+        <View style={styles.dividerLine} />
+      </View>
+
+      {/* AI gợi ý */}
+      <TouchableOpacity
+        style={styles.primaryButton}
+        onPress={async () => {
+  if (!token) return;
+  setLoading(true);
+  try {
+    const data = await getDailyMenuRecommendation(selectedDate, token);
+    setMenu(data);
+  } catch {
+    setMenu(null);
+  } finally {
+    setLoading(false);
+  }
+}}
+      >
+        <Ionicons name="bulb-outline" size={20} color="#FFF" />
+        <Text style={styles.primaryText}>Lấy gợi ý thực đơn</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+
+  const onRefresh = useCallback(async () => {
+  setRefreshing(true);
+  await Promise.all([fetchDay(selectedDate), fetchWeek()]);
+  setRefreshing(false);
+}, [selectedDate, fetchDay, fetchWeek]);
+
   const handleToggleCheck = async (meal: Meal) => {
     if (!token || !menu) return;
 
@@ -264,6 +236,7 @@ const handleAddRecipeToMenu = async (params: any) => {
   const isEmpty = Object.values(groupedMeals).every(
     (items) => items.length === 0
   );
+
   return (
     <ScreenContainer>
       <Text style={styles.title}>Thực đơn hôm nay</Text>
@@ -336,30 +309,30 @@ const handleAddRecipeToMenu = async (params: any) => {
         }
         showsVerticalScrollIndicator={false}
       >
-        {(loading || isEmpty) ? renderEmpty() : (
-          Object.entries(groupedMeals).map(([key, items]) => {
-            if (items.length === 0) return null;
-
-            return (
-              <View key={key} style={styles.mealSection}>
-                {/* Title */}
-                <Text style={styles.mealSectionTitle}>
-                  {MEAL_LABELS[key as keyof typeof MEAL_LABELS]}
-                </Text>
-
-                {/* Meals */}
-                {items.map((meal) => (
-                  <MealCard
-                    key={meal.id}
-                    meal={meal}
-                    onToggleCheck={handleToggleCheck}
-                    onDelete={handleDeleteMeal}
-                  />
-                ))}
-              </View>
-            );
-          })
-        )}
+        {loading ? (
+  <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />
+) : isEmpty ? (
+  renderEmpty()
+) : (
+  Object.entries(groupedMeals).map(([key, items]) => {
+    if (items.length === 0) return null;
+    return (
+      <View key={key} style={styles.mealSection}>
+        <Text style={styles.mealSectionTitle}>
+          {MEAL_LABELS[key as keyof typeof MEAL_LABELS]}
+        </Text>
+        {items.map((meal) => (
+          <MealCard
+            key={meal.id}
+            meal={meal}
+            onToggleCheck={handleToggleCheck}
+            onDelete={handleDeleteMeal}
+          />
+        ))}
+      </View>
+    );
+  })
+)}
       </ScrollView>
 
       {/* Modal search */}
