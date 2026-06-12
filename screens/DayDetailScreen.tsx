@@ -97,7 +97,7 @@ export const DayDetailScreen = ({ route, navigation }: any) => {
           ))}
         </View> */}
 
-        {/* WARMUP */}
+        {/* WARMUP 
         <View style={styles.warmupCard}>
           <View style={styles.warmupLeft}>
             <MaterialCommunityIcons name="fire" size={20} color="#00C897" />
@@ -113,7 +113,7 @@ export const DayDetailScreen = ({ route, navigation }: any) => {
             trackColor={{ false: '#ccc', true: '#A7F3D0' }}
             thumbColor={warmupEnabled ? '#00C897' : '#f4f3f4'}
           />
-        </View>
+        </View>*/}
 
         {/* EXERCISES */}
         <View style={styles.sectionHeader}>

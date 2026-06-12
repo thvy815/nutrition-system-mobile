@@ -14,6 +14,7 @@ import { useWorkout } from '../contexts/WorkoutContext';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { DAY_NAMES, WorkoutDay } from '../types/workout';
+import { Ionicons } from '@expo/vector-icons';
 
 const WORKOUT_IMAGE =
   'https://plus.unsplash.com/premium_photo-1664910764486-bed06a30a71b?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D';
@@ -21,11 +22,20 @@ const WORKOUT_IMAGE =
 const REST_IMAGE =
   'https://plus.unsplash.com/premium_photo-1674675646818-01d7a7bae64c?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8dGhpJUUxJUJCJTgxbnxlbnwwfHwwfHx8MA%3D%3D';
 
+function getVNDateOnly(date: string | Date) {
+  return new Date(date).toLocaleDateString('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+  });
+}
+
 export const WorkoutPlanScreen = ({ navigation }: any) => {
   const { plan, loading, error, fetchPlan } = useWorkout();
   const [refreshing, setRefreshing] = useState(false);
 
-  const currentDay = plan?.days?.find(d => !d.completed)?.day ?? 1;
+  const todayVN = getVNDateOnly(new Date());
+
+  const currentDay =
+    plan?.days?.find(d => getVNDateOnly(d.date) === todayVN)?.day ?? 1;
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -124,6 +134,15 @@ const DayItem = ({
 }: any) => {
   const isRest = day.type === 'rest';
   const isPast = day.day < currentDay;
+  const statusIcon = day.completed ? 'checkmark-circle' 
+    : day.skipped ? 'close-circle' 
+    : isCurrentDay ? 'play-circle'
+    : isPast ? 'alert-circle' 
+    : 'ellipse-outline';
+
+  const statusColor = day.completed ? COLORS.success 
+    : day.skipped ? COLORS.error 
+    : isCurrentDay ? COLORS.primary : COLORS.textMuted;
 
   return (
     <View style={styles.row}>
@@ -136,11 +155,11 @@ const DayItem = ({
           ]}
         />
 
-        {index !== planLength && (
+        {index !== planLength - 1 && (
           <View
             style={[
               styles.line,
-              (isPast || isCurrentDay) && {
+              (isPast) && {
                 backgroundColor: COLORS.primary,
               },
             ]}
@@ -156,15 +175,25 @@ const DayItem = ({
         />
 
         <View style={styles.cardContent}>
-          <Text style={styles.dayTitle}>{DAY_NAMES(day.day)}</Text>
+          <View style={styles.cardHeaderRow}>
+            <View>
+              <Text style={styles.dayTitle}>{DAY_NAMES(day.day)}</Text>
 
-          {isRest ? (
-            <Text style={styles.restText}>Ngày nghỉ</Text>
-          ) : (
-            <Text style={styles.meta}>
-              {day.totalDuration} phút | {day.totalCalories} kcal
-            </Text>
-          )}
+              {isRest ? (
+                <Text style={styles.restText}>Ngày nghỉ</Text>
+              ) : (
+                <Text style={styles.meta}>
+                  {day.totalDuration} phút | {day.estimatedCalories} kcal
+                </Text>
+              )}
+            </View>
+
+            <Ionicons
+              name={statusIcon as any}
+              size={28}
+              color={statusColor}
+            />
+          </View>
 
           {isCurrentDay && !isRest && (
             <TouchableOpacity style={styles.startBtnBig} onPress={onStart}>
@@ -188,6 +217,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   retryText: { color: '#fff' },
+
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
 
   header: { marginBottom: 20 },
   title: {

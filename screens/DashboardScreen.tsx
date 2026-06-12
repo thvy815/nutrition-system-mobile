@@ -19,6 +19,7 @@ import { getDailyMenuByDate } from '../services/dailyMenu';
 import { WorkoutDay, WorkoutExercise } from '../types/workout';
 import { useAuth } from '../contexts/AuthContext';
 import { DailyMenu, RecipeItem } from '../types/dailyMenu';
+import { RefreshableScrollView } from '../components/RefreshableScrollView';
 
 export function DashboardScreen() {
   const navigation = useNavigation<any>();
@@ -73,8 +74,11 @@ export function DashboardScreen() {
   };
 
   return (
-    <ScreenContainer>
-      <ScrollView showsVerticalScrollIndicator={false}>
+    <RefreshableScrollView
+      showsVerticalScrollIndicator={false}
+      onRefreshData={loadDashboard}
+    >
+      <ScreenContainer>
         <Text style={styles.title}>
           Dashboard
         </Text>
@@ -219,11 +223,9 @@ export function DashboardScreen() {
             </TouchableOpacity>
           </View>
 
-          {!todayMeal && (
-            <Text style={styles.mealHint}>
-              Chưa có thực đơn hôm nay
-            </Text>
-          )}
+          <Text style={styles.mealHint}>
+            {todayMeal ? 'Chỉ số dinh dưỡng:' : 'Chưa có thực đơn hôm nay'}
+          </Text>
 
           {todayMeal && (
             <View style={styles.mealSummary}>
@@ -303,8 +305,8 @@ export function DashboardScreen() {
             </View>
           )}
         </Card>
-      </ScrollView>
-    </ScreenContainer>
+      </ScreenContainer>
+    </RefreshableScrollView>
   );
 }
 
