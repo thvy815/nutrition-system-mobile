@@ -12,7 +12,6 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Card, ScreenContainer } from '../components';
 import { COLORS, SPACING } from '../constants/theme';
-import { MOCK_FOOD_ANALYSIS, MOCK_RECIPE_ANALYSIS } from '../constants/mockData';
 import type { FoodAnalysisResult, RecipeAnalysisResult } from '../types';
 import { detectRecipe, Recipe, searchRecipesByIngredient, getIngredientsAndInstructionsInAi, findIngredientsByAi, Ingredient, getMappingIngredients, MappedIngredient } from '../services/recipe';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,28 +20,32 @@ import { ActivityIndicator } from 'react-native';
 type InputMode = 'image' | 'recipe';
 
 export function FoodAnalysisScreen() {
-  const { token } = useAuth(); // Lấy token
+  const { token } = useAuth();
   const [inputMode, setInputMode] = useState<InputMode>('image');
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false); // Thêm loading state
+  const [loading, setLoading] = useState(false);
   const [recipeText, setRecipeText] = useState('');
-
-  // Lưu tên món ăn nhận diện được
   const [detectedName, setDetectedName] = useState<string | null>(null);
 
   const [imageResult, setImageResult] = useState<Recipe | null>(null);
   const [ingredientResult, setIngredientResult] = useState<Ingredient[] | null>(null);
   const [ingMappingResult, setIngMappingResult] = useState<MappedIngredient[] | null>(null);
+  const [totalNutrition, setTotalNutrition] = useState<any>(null);
+
+  // Hàm dọn dẹp sạch sẽ toàn bộ kết quả phân tích
+  const resetAllResults = () => {
+    setImageResult(null);
+    setIngredientResult(null);
+    setIngMappingResult(null);
+    setTotalNutrition(null);
+    setDetectedName(null);
+  };
 
   const handleMapping = async (ingredients: { name: string }[]) => {
-    if (!token || !ingredients || ingredients.length === 0) {
-      console.warn("Thiếu token hoặc danh sách nguyên liệu trống");
-      return null;
-    }
+    if (!token || !ingredients || ingredients.length === 0) return null;
     setLoading(true);
     try {
       const result = await getMappingIngredients(ingredients, 1, token);
-      console.log(">>>result mapping", result[0]);
       return result;
     } catch (err) {
       console.error('Mapping error:', err);
@@ -50,61 +53,127 @@ export function FoodAnalysisScreen() {
     } finally {
       setLoading(false);
     }
-  }
+  };
+
+  // Hàm dùng chung để tính toán tổng dinh dưỡng từ mảng đã được Mapping
+  // Truyền thêm mảng nguyên liệu gốc (originalIngredients) vào hàm
+  const calculateAndSetTotalNutrition = (
+    mappedList: MappedIngredient[],
+    originalIngredients: any[]
+  ) => {
+    if (mappedList && mappedList.length > 0) {
+      const totalNutri = mappedList.reduce((acc, ing, index) => {
+        // Lấy lượng weight/amount từ mảng nguyên liệu gốc tương ứng cùng index
+        // Phòng hờ nếu không có amount thì mặc định là 1 (hoặc chia cho 100 nếu DB của bạn tính theo 100g)
+        const amount = originalIngredients[index]?.quantity?.amount || 1;
+        console.log(`Ingredient Mapping name: ${ing.name}, Amount: ${amount}, Ingredient name:`, originalIngredients[index]?.namer);
+        // Nếu DB của bạn lưu dinh dưỡng tính trên mỗi 100g, bạn cần chia cho 100:
+        // const factor = amount / 100;
+        // Nếu DB lưu sẵn dinh dưỡng cho đúng 1 đơn vị định lượng (1g, 1 quả, v.v.), thì giữ nguyên factor = amount:
+        const factor = amount / 100;
+
+        acc.calories += (ing.nutrition?.calories || 0) * factor;
+        acc.protein += (ing.nutrition?.protein || 0) * factor;
+        acc.carbs += (ing.nutrition?.carbs || 0) * factor;
+        acc.fat += (ing.nutrition?.fat || 0) * factor;
+        return acc;
+      }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
+
+      // Làm tròn số cho đẹp mắt (ví dụ: 12.34g đạm thay vì 12.33333333g)
+      setTotalNutrition({
+        calories: Math.round(totalNutri.calories),
+        protein: Number(totalNutri.protein.toFixed(1)),
+        carbs: Number(totalNutri.carbs.toFixed(1)),
+        fat: Number(totalNutri.fat.toFixed(1)),
+      });
+    }
+  };
 
   const handleDetectRecipe = async (imageAsset: any) => {
-    setImageResult(null);
+    resetAllResults(); // Xóa sạch kết quả cũ trước khi nạp cái mới
     if (!token) return;
     setLoading(true);
     try {
-      const result = await detectRecipe(imageAsset, token);
+      const detectRes = await detectRecipe(imageAsset, token);
 
-      if (result.success) {
-        let foodName = result.detectedFoodName;
+      if (detectRes.success) {
+        let foodName = detectRes.detectedFoodName;
         setDetectedName(foodName);
+
         try {
-          const result = await searchRecipesByIngredient({
+          const searchRes = await searchRecipesByIngredient({
             keyword: foodName,
             token,
             page: 1,
             limit: 20
           });
-          if (result.recipes.length === 0) {
-            console.log(">>>Vao getIngredientsAndInstructionsInAi")
-            const resultByAi = await getIngredientsAndInstructionsInAi(foodName, token);
 
-            // const ingList = resultByAi?.ingredients || [];
-            // const nameIngList = ingList.map((ing: any) => ({
-            //   name: ing.name
-            // }));
-            // const temp = await handleMapping(nameIngList);
-            // setIngMappingResult(temp);
+          if (searchRes.recipes.length === 0) {
+            const aiRes = await getIngredientsAndInstructionsInAi(foodName, token);
+            const ingList = aiRes?.ingredients || [];
+            const nameIngList = ingList.map((ing: any) => ({ name: ing.name }));
 
-            setImageResult(resultByAi);
-            console.log(">>>resultByAi", resultByAi);
+            const tempMapping = await handleMapping(nameIngList);
+            if (tempMapping) {
+              calculateAndSetTotalNutrition(tempMapping, ingList);
+              setIngMappingResult(tempMapping);
+            }
+            setImageResult(aiRes);
           } else {
-            console.log(">>>Vao searchRecipesByIngredient")
-            setImageResult(result.recipes[0]);
+            setImageResult(searchRes.recipes[0]);
           }
-
         } catch (err) {
           console.error('Search error:', err);
-          // Alert.alert('Lỗi', 'Không thể kết nối máy chủ hoặc tìm thấy công thức.');
         } finally {
-          setLoading(false); // Tắt trạng thái chờ
+          setLoading(false);
         }
-
       } else {
         Alert.alert('Thông báo', 'Không nhận diện được món ăn trong ảnh.');
       }
     } catch (error: any) {
-      // Log chi tiết lỗi từ Server
       console.error("API Error Detail:", error.response?.data || error.message);
       Alert.alert('Lỗi', 'Máy chủ không nhận được file ảnh hợp lệ.');
     } finally {
       setLoading(false);
     }
   };
+
+  const handleAnalyzeRecipe = async () => {
+    if (!token || !recipeText.trim()) return;
+    resetAllResults(); // Xóa sạch kết quả cũ
+    setLoading(true);
+
+    try {
+      const resIngredients = await findIngredientsByAi(recipeText, token);
+      setIngredientResult(resIngredients);
+
+      // SỬA LỖI SỐ 3: Tiến hành mapping dinh dưỡng luôn cho chế độ nhập chữ
+      if (resIngredients && resIngredients.length > 0) {
+        const nameIngList = resIngredients.map((ing: any) => ({ name: ing.name }));
+        const tempMapping = await handleMapping(nameIngList);
+        if (tempMapping) {
+          calculateAndSetTotalNutrition(tempMapping, resIngredients);
+          setIngMappingResult(tempMapping);
+        }
+      }
+    } catch (err) {
+      console.error('Analyze recipe error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSwitchMode = (mode: InputMode) => {
+    setInputMode(mode);
+    resetAllResults(); // SỬA LỖI SỐ 2: Đổi chế độ là dọn sạch bách dữ liệu chế độ cũ
+    if (mode === 'image') {
+      setRecipeText('');
+    } else {
+      setImageUri(null);
+    }
+  };
+
+  // ... Các hàm xin quyền và pickImage giữ nguyên ...
 
   const pickImage = async (useCamera: boolean) => {
     try {
@@ -147,36 +216,6 @@ export function FoodAnalysisScreen() {
       }
     } catch (error) {
       Alert.alert('Lỗi', 'Không thể chọn ảnh. Vui lòng thử lại.');
-    }
-  };
-
-  // Thêm async ở đây ----------------
-  const handleAnalyzeRecipe = async () => {
-    if (!token) return;
-    setIngredientResult(null);
-    setLoading(true);
-
-    if (recipeText.trim()) {
-      try {
-        const res = await findIngredientsByAi(recipeText, token);
-        setIngredientResult(res);
-      } catch (err) {
-        console.error('Search error:', err);
-        // Alert.alert('Lỗi', 'Không thể kết nối máy chủ hoặc tìm thấy cong thuc.');
-      } finally {
-        setLoading(false);
-      }
-    }
-  };
-
-  const handleSwitchMode = (mode: InputMode) => {
-    setInputMode(mode);
-    if (mode === 'image') {
-      setRecipeText('');
-      setIngredientResult(null);
-    } else {
-      setImageUri(null);
-      setImageResult(null);
     }
   };
 
@@ -255,7 +294,7 @@ export function FoodAnalysisScreen() {
             </Card>
           )}
 
-          {detectedName && !loading && (
+          {detectedName && !loading && imageUri && (
             <View style={styles.resultBrief}>
               <Text style={styles.detectedText}>
                 Kết quả nhận diện: <Text style={{ fontWeight: 'bold' }}>{detectedName}</Text>
@@ -301,49 +340,6 @@ export function FoodAnalysisScreen() {
       {/* Results */}
       {hasResult && (
         <View style={styles.resultsSection}>
-          {imageResult && (
-            <>
-              <Card style={styles.resultCard}>
-                <Text style={styles.resultLabel}>Nguyên liệu dự kiến</Text>
-                {imageResult.ingredients.map((ing, i) => (
-                  <Card key={i} style={styles.ingredientCard}>
-                    <Text style={styles.ingredientName}>{ing.name}</Text>
-                    <View style={styles.ingredientMacros}>
-                      <Text style={styles.macroText}>{ing.quantity.amount || ing.quantity.originalAmount} {ing.quantity.unit || ing.quantity.originalUnit}</Text>
-                    </View>
-                  </Card>
-                ))}
-              </Card>
-
-              {(imageResult.totalNutritionPerServing || imageResult.totalNutrition) &&
-                <NutritionSummaryCard
-                  calories={imageResult.totalNutrition?.calories || imageResult.totalNutritionPerServing?.calories || 0}
-                  protein={imageResult.totalNutrition?.protein || imageResult.totalNutritionPerServing?.protein || 0}
-                  carbs={imageResult.totalNutrition?.carbs || imageResult.totalNutritionPerServing?.carbs || 0}
-                  fat={imageResult.totalNutrition?.fat || imageResult.totalNutritionPerServing?.fat || 0}
-                />
-              }
-              {
-                ingMappingResult && (
-                  <Card style={styles.resultCard}>
-                    <Text style={styles.resultLabel}>Nguyên liệu dùng để tính dinh dưỡng</Text>
-                    {ingMappingResult.map((ing, i) => (
-                      <Card key={i} style={styles.ingredientCard}>
-                        <Text style={styles.ingredientName}>{ing.name}</Text>
-                        <View style={styles.ingredientMacros}>
-                          <Text style={styles.macroText}>{ing.nutrition?.calories} calo</Text>
-                          <Text style={styles.macroText}>Protein: {ing.nutrition?.protein}g</Text>
-                          <Text style={styles.macroText}>Carb: {ing.nutrition?.carbs}g</Text>
-                          <Text style={styles.macroText}>Fat: {ing.nutrition?.fat}g</Text>
-                        </View>
-                      </Card>
-                    ))}
-                  </Card>
-                )
-              }
-            </>
-          )}
-
           {ingredientResult && !loading && (
             <>
               <Text style={styles.sectionTitle}>Nguyên liệu</Text>
@@ -374,8 +370,67 @@ export function FoodAnalysisScreen() {
                   </Card>
                 )
               }
+
             </>
           )}
+
+          {imageResult && (
+            <>
+              <Card style={styles.resultCard}>
+                <Text style={styles.resultLabel}>Nguyên liệu dự kiến</Text>
+                {imageResult.ingredients.map((ing, i) => (
+                  <Card key={i} style={styles.ingredientCard}>
+                    {/* Thẻ Text cha bọc ngoài giúp name và amount nằm chung 1 hàng liền mạch */}
+                    <Text style={styles.ingredientName}>
+                      {ing.name}{' - '}
+                      <Text style={styles.macroText}>
+                        {ing.quantity.amount || ing.quantity.originalAmount}{' '}
+                        {ing.quantity.unit || ing.quantity.originalUnit}
+                      </Text>
+                    </Text>
+                  </Card>
+                ))}
+              </Card>
+
+              {totalNutrition ? (
+                <NutritionSummaryCard
+                  calories={totalNutrition.calories}
+                  protein={totalNutrition.protein}
+                  carbs={totalNutrition.carbs}
+                  fat={totalNutrition.fat}
+                />
+              ) : (imageResult.totalNutritionPerServing || imageResult.totalNutrition) ? (
+                <NutritionSummaryCard
+                  calories={imageResult.totalNutrition?.calories || imageResult.totalNutritionPerServing?.calories || 0}
+                  protein={imageResult.totalNutrition?.protein || imageResult.totalNutritionPerServing?.protein || 0}
+                  carbs={imageResult.totalNutrition?.carbs || imageResult.totalNutritionPerServing?.carbs || 0}
+                  fat={imageResult.totalNutrition?.fat || imageResult.totalNutritionPerServing?.fat || 0}
+                />
+              ) : null}
+              {
+                ingMappingResult && (
+                  <Card style={styles.resultCard}>
+                    <Text style={styles.resultLabel}>Nguyên liệu dùng để tính dinh dưỡng</Text>
+                    {ingMappingResult.map((ing, i) => (
+                      <Card key={i} style={styles.ingredientCard}>
+                        <Text style={styles.ingredientName}>{ing.name}</Text>
+                        <View style={styles.ingredientMacros}>
+                          <Text style={styles.macroText}>{ing.nutrition?.calories} kcal</Text>
+                          <Text style={styles.macroText}>Pro: {ing.nutrition?.protein}g</Text>
+                          <Text style={styles.macroText}>Carb: {ing.nutrition?.carbs}g</Text>
+                          <Text style={styles.macroText}>Fat: {ing.nutrition?.fat}g</Text>
+                        </View>
+                      </Card>
+                    ))}
+                  </Card>
+                )
+              }
+
+            </>
+          )}
+
+
+
         </View>
       )}
     </ScreenContainer>
@@ -400,7 +455,7 @@ function NutritionSummaryCard({
         <View style={styles.nutritionItem}>
           <Ionicons name="flame" size={24} color={COLORS.accent} />
           <Text style={styles.nutritionValue}>{calories}</Text>
-          <Text style={styles.nutritionLabel}>Calo</Text>
+          <Text style={styles.nutritionLabel}>kcal</Text>
         </View>
         <View style={styles.nutritionItem}>
           <Ionicons name="fitness" size={24} color={COLORS.primary} />
