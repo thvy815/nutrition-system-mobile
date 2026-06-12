@@ -8,7 +8,8 @@ import {
   WorkoutPlanResponse, 
   WorkoutPlan, 
   WorkoutSessionResponse,
-  WorkoutSessionData
+  WorkoutSessionData,
+  WorkoutDay
 } from '../types/workout';
 
 export const workoutService = {
@@ -61,6 +62,24 @@ export const workoutService = {
     } catch (error) { 
       console.error('generateNextWeek error:', error); 
       throw error; 
+    }
+  },
+
+  async getTodayWorkout(): Promise<WorkoutDay> {
+    try {
+      const { data } = await api.get<{
+        success: boolean;
+        data: WorkoutDay;
+      }>('/workout-plan/today');
+
+      if (!data.success) {
+        throw new Error('Failed to fetch today workout');
+      }
+
+      return data.data;
+    } catch (error) {
+      console.error('getTodayWorkout error:', error);
+      throw error;
     }
   },
 

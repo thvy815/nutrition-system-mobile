@@ -10,6 +10,7 @@ export type WorkoutLevel =
   | 'advanced';
 
 export interface WorkoutExercise {
+  _id?: string;
   exerciseId: number;
   name: string;
   sets: number;

@@ -1,289 +1,490 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+} from 'react-native';
+
 import { Ionicons } from '@expo/vector-icons';
-import { Card, ProgressBar, ScreenContainer, GoalTag, DifficultyTag } from '../components';
+
+import { useNavigation } from '@react-navigation/native';
+
 import { COLORS, SPACING } from '../constants/theme';
-import { MOCK_DASHBOARD } from '../constants/mockData';
-import type { Meal, Workout } from '../types';
+
+import { Card, ScreenContainer } from '../components';
+import { workoutService } from '../services';
+import { getDailyMenuByDate } from '../services/dailyMenu';
+import { WorkoutDay, WorkoutExercise } from '../types/workout';
+import { useAuth } from '../contexts/AuthContext';
+import { DailyMenu, RecipeItem } from '../types/dailyMenu';
 
 export function DashboardScreen() {
-  const { dailyCalorieTarget, caloriesConsumed, caloriesBurned, weight, bmi, todayMeals, todayWorkouts } = MOCK_DASHBOARD;
-  const net = caloriesConsumed - caloriesBurned;
-  const isOver = net > dailyCalorieTarget;
-  const isUnder = net < dailyCalorieTarget;
+  const navigation = useNavigation<any>();
+  const { token } = useAuth();
+
+  const [loading, setLoading] = useState(true);
+
+  const [todayWorkout, setTodayWorkout] = useState<WorkoutDay | null>(null);
+  const [todayMeal, setTodayMeal] = useState<DailyMenu | null>(null);
+
+  useEffect(() => {
+    loadDashboard();
+  }, []);
+
+  async function loadDashboard() {
+    try {
+      if (!token) return;
+      setLoading(true);
+
+      const workout = await workoutService.getTodayWorkout();
+
+      setTodayWorkout(workout);
+
+      // meal theo ngày
+      const today = new Date()
+        .toLocaleString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' })
+        .split(' ')[0];
+
+      const meal = await getDailyMenuByDate(today, token);
+
+      setTodayMeal(meal);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <ScreenContainer>
+        <Text>Loading...</Text>
+      </ScreenContainer>
+    );
+  }
+
+  const mealGroups = {
+    breakfast: todayMeal?.recipes?.filter(item => item.servingTime === 'breakfast') ?? [],
+    lunch: todayMeal?.recipes?.filter(item => item.servingTime === 'lunch') ?? [],
+    dinner: todayMeal?.recipes?.filter(item => item.servingTime === 'dinner') ?? [],
+    snack: todayMeal?.recipes?.filter(item => item.servingTime === 'snack') ?? [],
+  };
+
   return (
     <ScreenContainer>
-      <Text style={styles.title}>Trang chủ</Text>
-      <Text style={styles.subtitle}>Tổng quan sức khỏe của bạn</Text>
-
-      {/* Calorie Summary */}
-      <Card style={styles.card}>
-        <View style={styles.calorieHeader}>
-          <Ionicons name="flame" size={24} color={COLORS.accent} />
-          <Text style={styles.cardTitle}>Cân bằng năng lượng</Text>
-        </View>
-
-        {/* Calories eaten */}
-        <ProgressBar
-          value={caloriesConsumed}
-          max={dailyCalorieTarget}
-          label={`Đã ăn: ${caloriesConsumed} / ${dailyCalorieTarget} kcal`}
-          color={COLORS.primary}
-        />
-
-        {/* Calories burned */}
-        <View style={{ marginTop: SPACING.md }}>
-          <ProgressBar
-            value={caloriesBurned}
-            max={dailyCalorieTarget}
-            label={`Đã đốt: ${caloriesBurned} kcal`}
-            color={COLORS.secondary}
-          />
-        </View>
-
-        {/* Net + Target comparison */}
-        <View style={styles.statsRow}>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>
-              {caloriesConsumed - caloriesBurned}
-            </Text>
-            <Text style={styles.statLabel}>Net kcal</Text>
-          </View>
-
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>
-              {dailyCalorieTarget}
-            </Text>
-            <Text style={styles.statLabel}>Mục tiêu</Text>
-          </View>
-        </View>
-        <Text
-          style={[
-            styles.balanceHint,
-            {
-              backgroundColor: isOver
-                ? '#FFE5E5'
-                : isUnder
-                ? '#FFF4E5'
-                : '#E5F0FF',
-
-              color: isOver
-                ? '#D93025'
-                : isUnder
-                ? '#B26A00'
-                : '#1A73E8',
-            },
-          ]}
-        >
-          {isOver
-            ? 'Vượt mục tiêu (dễ tăng cân)'
-            : isUnder
-            ? 'Chưa đạt mục tiêu (có thể giảm cân)'
-            : 'Cân bằng hoàn hảo'}
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <Text style={styles.title}>
+          Dashboard
         </Text>
-      </Card>
 
-      {/* Weight & BMI */}
-      <Card style={styles.card}>
-        <View style={styles.calorieHeader}>
-          <Ionicons name="body" size={24} color={COLORS.secondary} />
-          <Text style={styles.cardTitle}>Chỉ số cơ thể</Text>
-        </View>
-        <View style={styles.statsRow}>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{weight} kg</Text>
-            <Text style={styles.statLabel}>Cân nặng</Text>
+        <Text style={styles.subtitle}>
+          Tổng quan hôm nay
+        </Text>
+
+        {/* Summary */}
+        <Card style={styles.summaryCard}>
+          <View style={styles.summaryHeader}>
+            <Ionicons
+              name="flame"
+              size={24}
+              color={COLORS.accent}
+            />
+
+            <Text style={styles.summaryTitle}>
+              Hôm nay
+            </Text>
           </View>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{bmi}</Text>
-            <Text style={styles.statLabel}>BMI</Text>
+
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>
+                {todayMeal?.totalNutrition?.calories ?? 0}
+              </Text>
+              <Text style={styles.statLabel}>Kcal menu</Text>
+            </View>
+
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>
+                {todayMeal?.totalNutrition?.protein ?? 0}
+              </Text>
+              <Text style={styles.statLabel}>Protein</Text>
+            </View>
+
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>
+                {todayWorkout?.estimatedCalories ?? 0}
+              </Text>
+              <Text style={styles.statLabel}>Dự kiến đốt</Text>
+            </View>
           </View>
-        </View>
-      </Card>
+        </Card>
 
-      {/* Today's Meals */}
-      <Text style={styles.sectionTitle}>Bữa ăn hôm nay</Text>
-      {todayMeals.map((meal) => (
-        <MealCard key={meal.id} meal={meal} />
-      ))}
+        {/* Workout */}
+        <Card style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.row}>
+              <Ionicons
+                name="barbell"
+                size={22}
+                color={COLORS.primary}
+              />
 
-      {/* Today's Workouts */}
-      <Text style={styles.sectionTitle}>Bài tập hôm nay</Text>
-      {todayWorkouts.map((workout) => (
-        <WorkoutCard key={workout.id} workout={workout} />
-      ))}
+              <Text style={styles.sectionTitle}>
+                Bài tập hôm nay
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate('WorkoutPlan')
+              }
+            >
+              <Text style={styles.link}>
+                Xem thêm
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {todayWorkout?.type === 'rest' ? (
+            <Text style={styles.restText}>
+              Hôm nay là ngày nghỉ phục hồi
+            </Text>
+          ) : (
+            <>
+              <Text style={styles.focus}>
+                {todayWorkout?.focus}
+              </Text>
+
+              <View style={styles.workoutInfo}>
+                <Text style={styles.infoText}>
+                  ⏱ {todayWorkout?.totalDuration} phút
+                </Text>
+
+                <Text style={styles.infoText}>
+                  🔥 {todayWorkout?.estimatedCalories} kcal
+                </Text>
+              </View>
+
+              <View style={styles.innerList}>
+                {(todayWorkout?.exerciseDetails ?? []).map(
+                  (exercise: WorkoutExercise) => (
+                    <View
+                      key={exercise.exerciseId}
+                      style={styles.exerciseItem}
+                    >
+                      <View style={styles.dot} />
+
+                      <View>
+                        <Text style={styles.exerciseName}>
+                          {exercise.name}
+                        </Text>
+
+                        <Text style={styles.exerciseDetail}>
+                          {exercise.sets} sets • {exercise.reps} reps • {exercise.calories} kcal
+                        </Text>
+                      </View>
+                    </View>
+                  )
+                )}
+              </View>
+            </>
+          )}
+        </Card>
+
+        {/* Meal */}
+        <Card style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.row}>
+              <Ionicons
+                name="restaurant"
+                size={22}
+                color={COLORS.secondary}
+              />
+
+              <Text style={styles.sectionTitle}>
+                Thực đơn hôm nay
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate('MealRecommendation')
+              }
+            >
+              <Text style={styles.link}>
+                Xem menu
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {!todayMeal && (
+            <Text style={styles.mealHint}>
+              Chưa có thực đơn hôm nay
+            </Text>
+          )}
+
+          {todayMeal && (
+            <View style={styles.mealSummary}>
+              <Text style={styles.mealSummaryText}>
+                Protein: {todayMeal.totalNutrition?.protein ?? 0}g • 
+                Carbs: {todayMeal.totalNutrition?.carbs ?? 0}g • 
+                Fat: {todayMeal.totalNutrition?.fat ?? 0}g
+              </Text>
+            </View>
+          )}
+
+          {mealGroups.breakfast.length > 0 && (
+            <View style={styles.mealSection}>
+              <Text style={styles.mealTimeTitle}>🌅 Bữa sáng</Text>
+
+              <View style={styles.innerList}>
+                {mealGroups.breakfast.map((item: RecipeItem) => (
+                  <View key={item._id} style={styles.mealItem}>
+                    <Text style={styles.exerciseName}>{item.name}</Text>
+                    <Text style={styles.exerciseDetail}>
+                      {item.nutrition?.calories ?? 0} kcal
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {mealGroups.lunch.length > 0 && (
+            <View style={styles.mealSection}>
+              <Text style={styles.mealTimeTitle}>☀️ Bữa trưa</Text>
+
+              <View style={styles.innerList}>
+                {mealGroups.lunch.map((item: RecipeItem) => (
+                  <View key={item._id} style={styles.mealItem}>
+                    <Text style={styles.exerciseName}>{item.name}</Text>
+                    <Text style={styles.exerciseDetail}>
+                      {item.nutrition?.calories ?? 0} kcal
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {mealGroups.dinner.length > 0 && (
+            <View style={styles.mealSection}>
+              <Text style={styles.mealTimeTitle}>🌙 Bữa tối</Text>
+
+              <View style={styles.innerList}>
+                {mealGroups.dinner.map((item: RecipeItem) => (
+                  <View key={item._id} style={styles.mealItem}>
+                    <Text style={styles.exerciseName}>{item.name}</Text>
+                    <Text style={styles.exerciseDetail}>
+                      {item.nutrition?.calories ?? 0} kcal
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {mealGroups.snack.length > 0 && (
+            <View style={styles.mealSection}>
+              <Text style={styles.mealTimeTitle}>🍎 Bữa phụ</Text>
+
+              <View style={styles.innerList}>
+                {mealGroups.snack.map((item: RecipeItem) => (
+                  <View key={item._id} style={styles.mealItem}>
+                    <Text style={styles.exerciseName}>{item.name}</Text>
+                    <Text style={styles.exerciseDetail}>
+                      {item.nutrition?.calories ?? 0} kcal
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+        </Card>
+      </ScrollView>
     </ScreenContainer>
   );
 }
 
-function MealCard({ meal }: { meal: Meal }) {
-  return (
-    <Card style={styles.mealCard}>
-      <View style={styles.mealHeader}>
-        <Text style={styles.mealName}>{meal.name}</Text>
-        {meal.goalTag && <GoalTag goal={meal.goalTag} />}
-      </View>
-      <View style={styles.macros}>
-        <Text style={styles.macroText}>{meal.calories} calo</Text>
-        <Text style={styles.macroText}>Đạm: {meal.protein}g</Text>
-        <Text style={styles.macroText}>Tinh bột: {meal.carbs}g</Text>
-        <Text style={styles.macroText}>Béo: {meal.fat}g</Text>
-      </View>
-    </Card>
-  );
-}
-
-function WorkoutCard({ workout }: { workout: Workout }) {
-  return (
-    <Card style={styles.workoutCard}>
-      <View style={styles.workoutHeader}>
-        <Text style={styles.workoutName}>{workout.name}</Text>
-        <DifficultyTag level={workout.difficulty} />
-      </View>
-      <View style={styles.workoutStats}>
-        <View style={styles.workoutStat}>
-          <Ionicons name="time-outline" size={16} color={COLORS.textSecondary} />
-          <Text style={styles.workoutStatText}>{workout.duration} phút</Text>
-        </View>
-        <View style={styles.workoutStat}>
-          <Ionicons name="flame-outline" size={16} color={COLORS.accent} />
-          <Text style={styles.workoutStatText}>{workout.caloriesBurned} calo</Text>
-        </View>
-      </View>
-    </Card>
-  );
-}
-
 const styles = StyleSheet.create({
+  innerList: {
+    marginTop: 12,
+    marginLeft: 12,
+    paddingLeft: 12,
+    borderLeftWidth: 2,
+    borderLeftColor: COLORS.border,
+  },
+
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.primary,
+    marginTop: 7,
+    marginRight: 10,
+  },
+
+  exerciseItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+
+  exerciseName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+
+  exerciseDetail: {
+    marginTop: 4,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+
+  mealSummary: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+  },
+
+  mealSummaryText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginBottom: 4,
+  },
+
+  mealSection: {
+    marginTop: 16,
+  },
+
+  mealTimeTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+
+  mealItem: {
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
   title: {
     fontSize: 28,
     fontWeight: '700',
     color: COLORS.text,
-    marginBottom: SPACING.xs,
   },
+
   subtitle: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
+    marginTop: 4,
     marginBottom: SPACING.lg,
+    color: COLORS.textSecondary,
+    fontSize: 15,
   },
-  card: {
+
+  summaryCard: {
     marginBottom: SPACING.md,
   },
-  calorieHeader: {
+
+  summaryHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.md,
   },
-  cardTitle: {
+
+  summaryTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: COLORS.text,
   },
+
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginTop: SPACING.sm,
-    paddingTop: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
   },
-  stat: {
+
+  statItem: {
     alignItems: 'center',
   },
+
   statValue: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '700',
     color: COLORS.text,
   },
+
   statLabel: {
-    fontSize: 12,
+    marginTop: 4,
     color: COLORS.textSecondary,
-    marginTop: SPACING.xs,
   },
+
+  card: {
+    marginBottom: SPACING.md,
+  },
+
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: COLORS.text,
-    marginTop: SPACING.lg,
-    marginBottom: SPACING.sm,
   },
-  mealCard: {
-    marginBottom: SPACING.sm,
+
+  link: {
+    color: COLORS.primary,
+    fontWeight: '600',
   },
-  mealHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  mealName: {
+
+  focus: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
-    flex: 1,
+    color: COLORS.primary,
+    marginBottom: SPACING.sm,
+    textTransform: 'capitalize',
   },
-  macros: {
+
+  workoutInfo: {
     flexDirection: 'row',
     gap: SPACING.md,
+    marginBottom: SPACING.md,
   },
-  macroText: {
-    fontSize: 14,
+
+  infoText: {
     color: COLORS.textSecondary,
   },
-  workoutCard: {
-    marginBottom: SPACING.sm,
-  },
-  workoutHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  workoutName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
-    flex: 1,
-  },
-  workoutStats: {
-    flexDirection: 'row',
-    gap: SPACING.lg,
-  },
-  workoutStat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-  },
-  workoutStatText: {
-    fontSize: 14,
+
+  mealHint: {
     color: COLORS.textSecondary,
   },
-  balanceBox: {
-    marginTop: SPACING.md,
-    padding: SPACING.sm,
+
+  mealBox: {
+    padding: SPACING.md,
+    borderRadius: 14,
     backgroundColor: COLORS.background,
-    borderRadius: 12,
   },
 
-  balanceText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
+  mealBoxText: {
+    color: COLORS.textSecondary,
+    lineHeight: 22,
   },
 
-  balanceHint: {
-    marginTop: SPACING.md,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    alignSelf: 'center',
-
-    fontSize: 13,
-    fontWeight: '500',
-    textAlign: 'center',
-
-    backgroundColor: COLORS.background,
-    color: COLORS.text,
+  restText: {
+    color: COLORS.textSecondary,
+    fontSize: 15,
   },
 });
