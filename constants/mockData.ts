@@ -1,14 +1,4 @@
-import type { Meal, Workout, FoodAnalysisResult, RecipeAnalysisResult, UserProfile } from '../types';
-
-export const MOCK_USER_PROFILE: UserProfile = {
-  age: 28,
-  gender: 'male',
-  height: 175,
-  weight: 75,
-  activityLevel: 'moderate',
-  healthGoal: 'build_muscle',
-  dietaryRestrictions: ['không gluten'],
-};
+import type { Meal, Workout, FoodAnalysisResult, RecipeAnalysisResult} from '../types';
 
 export const MOCK_DASHBOARD = {
   dailyCalorieTarget: 2200,
@@ -20,7 +10,7 @@ export const MOCK_DASHBOARD = {
     { id: '1', name: 'Sữa chua Hy Lạp với quả mọng', calories: 280, protein: 18, carbs: 32, fat: 8, timeOfDay: 'breakfast' as const },
     { id: '2', name: 'Salad gà nướng', calories: 420, protein: 35, carbs: 22, fat: 22, timeOfDay: 'lunch' as const },
     { id: '3', name: 'Cá hồi với hạt diêm mạch', calories: 550, protein: 42, carbs: 45, fat: 22, timeOfDay: 'dinner' as const },
-    { id: '4', name: 'Sinh tố protein', calories: 200, protein: 25, carbs: 8, fat: 2, timeOfDay: 'snack' as const },
+    { id: '4', name: 'Sinh tố protein', calories: 200, protein: 25, carbs: 8, fat: 2},
   ] as Meal[],
   todayWorkouts: [
     { id: '1', name: 'Thể lực phần trên', duration: 45, difficulty: 'intermediate' as const, caloriesBurned: 280 },

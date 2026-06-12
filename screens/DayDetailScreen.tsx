@@ -23,7 +23,7 @@ export const DayDetailScreen = ({ route, navigation }: any) => {
 
   const [warmupEnabled, setWarmupEnabled] = useState(true);
 
-  const day = plan?.plan.find(d => d.day === dayNumber) as WorkoutDay;
+  const day = plan?.days.find(d => d.day === dayNumber) as WorkoutDay | undefined;
 
   if (!day) {
     return (
@@ -77,7 +77,7 @@ export const DayDetailScreen = ({ route, navigation }: any) => {
 
           <View style={styles.statItem}>
             <MaterialCommunityIcons name="fire" size={18} color={COLORS.primary} />
-            <Text style={styles.statText}>{day.totalCalories} kcal</Text>
+            <Text style={styles.statText}>{day.estimatedCalories} kcal</Text>
           </View>
         </View>
 
@@ -86,7 +86,7 @@ export const DayDetailScreen = ({ route, navigation }: any) => {
           <Text style={styles.startText}>BẮT ĐẦU NGAY</Text>
         </TouchableOpacity>
 
-        {/* MUSCLE GROUP */}
+        {/* MUSCLE GROUP
         <View style={styles.muscleWrapper}>
           {day.muscleGroup?.map((m) => (
             <View key={m.id} style={styles.muscleChip}>
@@ -95,7 +95,7 @@ export const DayDetailScreen = ({ route, navigation }: any) => {
               </Text>
             </View>
           ))}
-        </View>
+        </View> */}
 
         {/* WARMUP */}
         <View style={styles.warmupCard}>

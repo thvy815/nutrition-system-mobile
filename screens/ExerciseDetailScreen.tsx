@@ -45,7 +45,7 @@ export const ExerciseDetailScreen = ({ route, navigation }: any) => {
   if (loading) {
     return (
       <ScreenContainer>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="small" color={COLORS.primary} />
       </ScreenContainer>
     );
   }
@@ -66,7 +66,7 @@ export const ExerciseDetailScreen = ({ route, navigation }: any) => {
 
         {/* BACK + TITLE */}
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={{ fontSize: 16 }}>← Back</Text>
+          <Text style={{ fontSize: 16 }}>← Quay lại</Text>
         </TouchableOpacity>
 
         <Text style={styles.title}>{exercise.name}</Text>
@@ -117,19 +117,47 @@ export const ExerciseDetailScreen = ({ route, navigation }: any) => {
 
           <TouchableOpacity onPress={() => setTab('how')}>
             <Text style={[styles.tab, tab === 'how' && styles.tabActive]}>
-              How to do
+              Hướng dẫn
             </Text>
           </TouchableOpacity>
         </View>
 
         {/* CONTENT */}
         {tab === 'how' ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Instructions</Text>
-            <Text style={styles.text}>
-              {exercise.description?.replace(/<[^>]+>/g, '')}
-            </Text>
-          </View>
+          <>
+            {/* INSTRUCTION */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Cách thực hiện</Text>
+              <Text style={styles.text}>
+                {exercise.description?.replace(/<[^>]+>/g, '')}
+              </Text>
+            </View>
+
+            {/* MUSCLES */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Nhóm cơ tác động</Text>
+              {exercise.muscles?.map((m: any) => (
+                <Text key={m.id} style={styles.tag}>
+                  • {m.name_en || m.name}
+                </Text>
+              ))}
+            </View>
+
+            {/* EQUIPMENT */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Dụng cụ cần thiết</Text>
+              {exercise.equipment?.length ? (
+                exercise.equipment.map((e: any) => (
+                  <Text key={e.id} style={styles.tag}>
+                    • {e.name}
+                  </Text>
+                ))
+              ) : (
+                <Text>Không cần dụng cụ</Text>
+              )}
+            </View>
+          </>
+          
         ) : (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Video</Text>
@@ -145,29 +173,7 @@ export const ExerciseDetailScreen = ({ route, navigation }: any) => {
           </View>
         )}
 
-        {/* MUSCLES */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Focus Area</Text>
-          {exercise.muscles?.map((m: any) => (
-            <Text key={m.id} style={styles.tag}>
-              • {m.name_en || m.name}
-            </Text>
-          ))}
-        </View>
-
-        {/* EQUIPMENT */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Equipment</Text>
-          {exercise.equipment?.length ? (
-            exercise.equipment.map((e: any) => (
-              <Text key={e.id} style={styles.tag}>
-                • {e.name}
-              </Text>
-            ))
-          ) : (
-            <Text>No equipment</Text>
-          )}
-        </View>
+        
 
       </ScrollView>
     </ScreenContainer>

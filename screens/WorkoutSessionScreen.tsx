@@ -95,6 +95,11 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
 
   const startSession = async () => {
     try {
+      console.log('USER:', user);
+      console.log('EXERCISE ID:', exerciseId);
+      console.log('PLAN:', plan);
+      console.log('PLAN ID:', plan?._id);
+      
       if (!user?._id || !exerciseId || !plan?._id) {
         Alert.alert('Lỗi', 'Thiếu thông tin người dùng, bài tập hoặc kế hoạch tập');
         return;
@@ -495,11 +500,11 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
         {(exercise.muscles && exercise.muscles.length > 0 || 
           exercise.muscles_secondary && exercise.muscles_secondary.length > 0) && (
           <View style={styles.muscleSection}>
-            <Text style={styles.muscleTitle}>Cơ được tập</Text>
+            <Text style={styles.muscleTitle}>Nhóm cơ tác động</Text>
             
             {exercise.muscles && exercise.muscles.length > 0 && (
               <>
-                <Text style={styles.muscleSubtitle}>Chính</Text>
+                <Text style={styles.muscleSubtitle}>Nhóm cơ chính</Text>
                 <View style={styles.muscleList}>
                   {exercise.muscles.map((muscle) => (
                     <View key={muscle.id} style={styles.muscleTag}>
@@ -512,10 +517,10 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
 
             {exercise.muscles_secondary && exercise.muscles_secondary.length > 0 && (
               <>
-                <Text style={styles.muscleSubtitle}>Phụ</Text>
+                <Text style={styles.muscleSubtitle}>Nhóm cơ phụ</Text>
                 <View style={styles.muscleList}>
                   {exercise.muscles_secondary.map((muscle) => (
-                    <View key={muscle.id} style={[styles.muscleTag, styles.secondaryMuscle]}>
+                    <View key={muscle.id} style={styles.muscleTag}>
                       <Text style={styles.muscleTagText}>{muscle.name_en}</Text>
                     </View>
                   ))}
