@@ -1,79 +1,93 @@
 /**
- * Types for Workout Plan feature
+ * Types for Workout Plan - Workout Session feature
  */
 
-export type DayType = 'workout' | 'rest';
-export type WorkoutLevel = 'beginner' | 'intermediate' | 'advanced';
+export type WorkoutDayType = 'workout' | 'rest';
 
-export interface ExercisePreview {
+export type WorkoutLevel =
+  | 'beginner'
+  | 'intermediate'
+  | 'advanced';
+
+export interface WorkoutExercise {
   exerciseId: number;
   name: string;
-  duration: number; // minutes
-}
+  sets: number;
+  reps: string;
+  duration: number;
+  calories: number;
 
-export interface ExerciseMuscle {
-  id: number;
-  name: string;
-  name_en: string;
-  _id?: string;
-}
-
-export interface ExerciseDetail {
-  _id: string;
-  exerciseId: number;
-  name: string;
-  description: string;
-  category: string;
-  categoryId: number;
-  equipment: Array<{
-    id: number;
-    name: string;
-    _id?: string;
-  }>;
-  images: string[];
-  muscles: ExerciseMuscle[];
-  muscles_secondary: ExerciseMuscle[];
-  videos: string[];
-  activityType: string;
-  defaultIntensity: string;
-  createdAt: string;
-  updatedAt: string;
+  intensity:
+    | 'light'
+    | 'moderate'
+    | 'vigorous';
 }
 
 export interface WorkoutDay {
   day: number;
-  type: 'workout' | 'rest';
+
+  date: string;
+
+  type: WorkoutDayType;
+
+  focus:
+    | 'push'
+    | 'pull'
+    | 'legs'
+    | 'upper'
+    | 'lower'
+    | 'full_body_push'
+    | 'full_body_pull'
+    | 'full_body_legs'
+    | 'recovery';
+
+  dailyTargetCalories: number;
+
+  estimatedCalories: number;
+
   totalDuration: number;
-  totalCalories: number;
+
+  estimatedDifficulty: number;
+
   completed: boolean;
-  completedAt: string | null;
 
-  muscleGroup?: {
-    id: number;
-    name: string;
-    name_en: string;
-    _id?: string;
-  }[];
+  skipped: boolean;
 
-  exerciseDetails?: {
-    exerciseId: number;
-    name: string;
-    duration: number;
-    calories: number;
-    sets?: number;
-    reps?: string;
-    _id?: string;
-  }[];
+  completedAt?: string | null;
+
+  exerciseDetails: WorkoutExercise[];
 }
 
 export interface WorkoutPlan {
   _id: string;
+
   userId: string;
+
   workoutLevel: WorkoutLevel;
-  targetCalories: number;
-  currentDay?: number;
-  plan: WorkoutDay[];
+
+  currentWeek: number;
+
+  weekStartDate: string;
+
+  weekEndDate: string;
+
+  weeklyTargetCalories: number;
+
+  weeklyEstimatedCalories: number;
+
+  fatigueScore: number;
+
+  recoveryScore: number;
+
+  avgPerformanceScore: number;
+
+  readinessScore: number;
+
+  days: WorkoutDay[];
+
   generatedAt: string;
+
+  isActive: boolean;
 }
 
 export interface WorkoutPlanResponse {
@@ -81,46 +95,41 @@ export interface WorkoutPlanResponse {
   data: WorkoutPlan;
 }
 
-export interface ExerciseDetailResponse {
-  success?: boolean;
-  data?: ExerciseDetail;
-}
+export const DAY_NAMES = (day: number) => `Ngày ${day}`;
 
-// For local state
-export interface WorkoutSession {
-  dayNumber: number;
-  exerciseId: number;
-  completed: boolean;
-  completedAt?: string;
-}
-
-// Workout Session API Types
 export interface WorkoutSessionData {
   _id: string;
+
   userId: string;
+
+  planId: string;
+
+  day: number;
+
   exerciseId: number;
-  intensity: 'light' | 'moderate' | 'intense';
+
+  exerciseName: string;
+
+  intensity:
+    | 'light'
+    | 'moderate'
+    | 'vigorous';
+
   startTime: string;
-  endTime: string | null;
-  durationMinutes: number | null;
-  kcalBurned: number | null;
-  createdAt: string;
-  updatedAt: string;
+
+  endTime?: string | null;
+
+  durationMinutes: number;
+
+  actualCalories: number;
+
+  completed: boolean;
+
+  skipped: boolean;
 }
 
 export interface WorkoutSessionResponse {
   success: boolean;
   data: WorkoutSessionData;
+  message?: string;
 }
-
-export interface WorkoutSessionStartRequest {
-  userId: string;
-  exerciseId: number | string;
-  intensity: 'light' | 'moderate' | 'intense';
-}
-
-export interface WorkoutSessionStopRequest {
-  sessionId: string;
-}
-
-export const DAY_NAMES = (day: number) => `Ngày ${day}`;

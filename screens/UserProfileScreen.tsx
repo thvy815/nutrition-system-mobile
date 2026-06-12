@@ -37,7 +37,7 @@ export function UserProfileScreen() {
     const loadProfile = async () => {
       try {
         setLoading(true);
-        const me = await fetchCurrentUser(token);
+        const me = await fetchCurrentUser();
         if (!isMounted) return;
 
         const mapped: UserProfile = {

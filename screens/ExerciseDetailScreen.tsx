@@ -12,7 +12,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { COLORS, BORDER_RADIUS } from '../constants/theme';
-import { workoutService } from '../services/workout';
+import { exerciseService } from '../services/exercise.service';
 
 const { width } = Dimensions.get('window');
 
@@ -33,7 +33,7 @@ export const ExerciseDetailScreen = ({ route, navigation }: any) => {
 
   const load = async () => {
     try {
-      const data = await workoutService.getExerciseDetail(exerciseId);
+      const data = await exerciseService.getExerciseDetail(exerciseId);
       setExercise(data);
     } catch (e) {
       console.log(e);

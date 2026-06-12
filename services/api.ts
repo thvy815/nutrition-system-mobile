@@ -1,5 +1,5 @@
 import { API_BASE_URL } from '../constants/api';
-import { getToken } from './auth';
+import { getToken } from './token';
 
 export type ApiError = {
   message: string;

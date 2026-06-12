@@ -16,8 +16,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { COLORS, SPACING, BORDER_RADIUS, SHADOWS } from '../constants/theme';
-import { workoutService } from '../services/workout';
-import { ExerciseDetail, WorkoutSessionData } from '../types/workout';
+import { workoutService } from '../services/workout.service';
+import { WorkoutSessionData } from '../types/workout';
+import { exerciseService } from '../services/exercise.service';
+import { ExerciseDetail } from '../types/exercise';
 
 const { width, height } = Dimensions.get('window');
 
@@ -29,8 +31,9 @@ interface SessionState {
   isRunning: boolean;
   isPaused: boolean;
   elapsedSeconds: number;
-  currentSet: number;
-  currentRep: number;
+
+  completedSets: number;
+  completedReps: number;
 }
 
 interface ExerciseSet {
@@ -52,8 +55,8 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
     isRunning: false,
     isPaused: false,
     elapsedSeconds: 0,
-    currentSet: 1,
-    currentRep: 1,
+    completedSets: 0,
+    completedReps: 0,
   });
 
   const timerInterval = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -61,7 +64,7 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   // Get exercise details and sets info
-  const exerciseDetailsFromDay = plan?.plan
+  const exerciseDetailsFromDay = plan?.days
     .find(d => d.day === dayNumber)
     ?.exerciseDetails?.find(e => e.exerciseId === exerciseId);
 
@@ -75,13 +78,12 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
 
   useEffect(() => {
     loadExercise();
-    loadSessionProgress();
   }, [exerciseId]);
 
   const loadExercise = async () => {
     try {
       setLoading(true);
-      const data = await workoutService.getExerciseDetail(exerciseId);
+      const data = await exerciseService.getExerciseDetail(exerciseId);
       setExercise(data);
     } catch (err) {
       setError('Không thể tải thông tin bài tập');
@@ -91,34 +93,19 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
     }
   };
 
-  const loadSessionProgress = async () => {
-    try {
-      const activeSession = await workoutService.getActiveSession();
-      if (activeSession && activeSession._id) {
-        sessionId.current = activeSession._id;
-        setSession(activeSession);
-        const progress = await workoutService.getSessionProgress(activeSession._id);
-        if (progress) {
-          setSessionState(progress);
-        }
-      }
-    } catch (err) {
-      console.error('Error loading session progress:', err);
-    }
-  };
-
   const startSession = async () => {
     try {
-      if (!user?._id || !exerciseId) {
-        Alert.alert('Lỗi', 'Thiếu thông tin người dùng hoặc bài tập');
+      if (!user?._id || !exerciseId || !plan?._id) {
+        Alert.alert('Lỗi', 'Thiếu thông tin người dùng, bài tập hoặc kế hoạch tập');
         return;
       }
 
-      const sessionData = await workoutService.startWorkoutSession(
-        user._id,
+      const sessionData = await workoutService.startWorkoutSession({
+        userId: user._id,
+        planId: plan._id,
+        day: dayNumber,
         exerciseId,
-        'moderate'
-      );
+      });
       
       sessionId.current = sessionData._id;
       setSession(sessionData);
@@ -127,6 +114,10 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
         ...prev,
         isRunning: true,
         isPaused: false,
+        elapsedSeconds: 0,
+        completedSets: 0,
+        completedReps: 0,
+
       }));
     } catch (err) {
       Alert.alert('Lỗi', 'Không thể bắt đầu buổi tập');
@@ -134,56 +125,32 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
     }
   };
 
-  const stopSession = async () => {
-    try {
-      if (!sessionId.current) return;
+  const togglePause = async () => {
+    if (!sessionState.isRunning) return;
 
-      timerInterval.current && clearInterval(timerInterval.current);
-      
-      const result = await workoutService.stopWorkoutSession(sessionId.current);
-      
-      // Clear progress
-      await workoutService.clearSessionProgress(sessionId.current);
-      
-      Alert.alert(
-        'Buổi tập kết thúc',
-        `Thời gian: ${Math.round(result.durationMinutes || 0)} phút\nCalo đốt cháy: ${Math.round(result.kcalBurned || 0)} kcal`,
-        [
-          {
-            text: 'Quay lại',
-            onPress: () => navigation.goBack(),
-          },
-        ]
-      );
+    if (!sessionState.isPaused) {
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current);
+      }
 
       setSessionState(prev => ({
         ...prev,
-        isRunning: false,
+        isPaused: true,
       }));
-    } catch (err) {
-      Alert.alert('Lỗi', 'Không thể kết thúc buổi tập');
-      console.error('Error stopping session:', err);
-    }
-  };
+    } else {
+      setSessionState(prev => ({
+        ...prev,
+        isPaused: false,
+      }));
 
-  const togglePause = async () => {
-    if (sessionState.isRunning) {
-      if (!sessionState.isPaused) {
-        // Pause
-        timerInterval.current && clearInterval(timerInterval.current);
-        // Save progress
-        await workoutService.saveSessionProgress(sessionId.current || '', sessionState);
-        setSessionState(prev => ({ ...prev, isPaused: true }));
-      } else {
-        // Resume
-        setSessionState(prev => ({ ...prev, isPaused: false }));
-        startTimer();
-      }
+      startTimer();
     }
   };
 
   const startTimer = () => {
-    if (timerInterval.current) clearInterval(timerInterval.current);
+    if (timerInterval.current) {
+      clearInterval(timerInterval.current);
+    }
 
     timerInterval.current = setInterval(() => {
       setSessionState(prev => ({
@@ -197,13 +164,77 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
     if (sessionState.isRunning && !sessionState.isPaused) {
       startTimer();
     } else {
-      timerInterval.current && clearInterval(timerInterval.current);
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current);
+      }
     }
 
     return () => {
-      timerInterval.current && clearInterval(timerInterval.current);
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current);
+      }
     };
   }, [sessionState.isRunning, sessionState.isPaused]);
+
+  const completeRep = () => {
+    setSessionState(prev => ({
+      ...prev,
+      completedReps:
+        prev.completedReps + 1,
+    }));
+  };
+
+  const completeSet = () => {
+    setSessionState(prev => ({
+      ...prev,
+      completedSets:
+        prev.completedSets + 1,
+    }));
+  };
+
+   const stopSession = async () => {
+    try {
+      if (!sessionId.current) return;
+
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current);
+      }
+      
+      const result = await workoutService.stopWorkoutSession({ 
+        sessionId: sessionId.current, 
+        completedSets: sessionState.completedSets, 
+        completedReps: sessionState.completedReps, 
+        perceivedDifficulty: 6, 
+      });
+      
+      Alert.alert(
+        'Buổi tập kết thúc',
+        `Thời gian: ${Math.round(result.durationMinutes || 0)} phút\n
+        Calo đốt cháy: ${Math.round(result.actualCalories || 0)} kcal`,
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack(),
+          },
+        ]
+      );
+
+      setSession(null);
+      sessionId.current = null;
+
+      setSessionState({
+        isRunning: false,
+        isPaused: false,
+        elapsedSeconds: 0,
+
+        completedSets: 0,
+        completedReps: 0,
+      });
+    } catch (err) {
+      console.error('Error stopping session:', err);
+      Alert.alert('Lỗi', 'Không thể kết thúc buổi tập');
+    }
+  };
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -353,19 +384,51 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
             <View style={styles.setInfoContainer}>
               <View style={styles.setIndicator}>
                 <Text style={styles.setLabel}>Bộ</Text>
-                <Text style={styles.setNumber}>{sessionState.currentSet}/{sets.length || 3}</Text>
+                <Text style={styles.setNumber}>{sessionState.completedSets}/{sets.length || 3}</Text>
               </View>
               <View style={styles.setIndicator}>
                 <Text style={styles.setLabel}>Reps</Text>
-                <Text style={styles.setNumber}>{sessionState.currentRep}</Text>
+                <Text style={styles.setNumber}>{sessionState.completedReps}</Text>
               </View>
             </View>
 
+            <View style={styles.repSetActions}>
+              <TouchableOpacity
+                style={styles.repButton}
+                onPress={completeRep}
+              >
+                <MaterialCommunityIcons
+                  name="arm-flex"
+                  size={20}
+                  color={COLORS.surface}
+                />
+
+                <Text style={styles.repSetButtonText}>
+                  + REP
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.setButton}
+                onPress={completeSet}
+              >
+                <MaterialCommunityIcons
+                  name="check-circle"
+                  size={20}
+                  color={COLORS.surface}
+                />
+
+                <Text style={styles.repSetButtonText}>
+                  HOÀN THÀNH SET
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             {/* Rest Timer (if available) */}
-            {sets.length > 0 && sessionState.currentSet <= sets.length && (
+            {sets.length > 0 && sessionState.completedSets <= sets.length && (
               <View style={styles.restInfo}>
                 <Text style={styles.restLabel}>Thời gian nghỉ</Text>
-                <Text style={styles.restTime}>{sets[sessionState.currentSet - 1]?.restSeconds || 60}s</Text>
+                <Text style={styles.restTime}>{sets[sessionState.completedSets - 1]?.restSeconds || 60}s</Text>
               </View>
             )}
           </View>
@@ -852,23 +915,57 @@ const styles = StyleSheet.create({
     height: 300,
     backgroundColor: COLORS.background,
     marginTop: SPACING.lg,
-    },
+  },
 
-    image: {
+  image: {
     width: width,
     height: 300,
     resizeMode: 'contain',
-    },
+  },
 
-    emptyImage: {
+  emptyImage: {
     width: width,
     height: 300,
     justifyContent: 'center',
     alignItems: 'center',
-    },
+  },
 
-    emptyText: {
+  emptyText: {
     marginTop: 8,
     color: COLORS.textSecondary,
-    },
+  },
+
+  repSetActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.lg,
+    gap: SPACING.md,
+  },
+
+  repButton: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
+    paddingVertical: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+  },
+
+  setButton: {
+    flex: 1.4,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.success,
+    paddingVertical: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+  },
+
+  repSetButtonText: {
+    color: COLORS.surface,
+    fontWeight: '700',
+    marginLeft: SPACING.sm,
+    fontSize: 14,
+  },
 });

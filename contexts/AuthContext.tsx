@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { getToken, logout as authLogout } from '../services/auth';
+import { logout as authLogout } from '../services/auth';
 import type { LoginUser } from '../types/auth';
+import { getToken } from '../services/token';
 
 interface AuthState {
   token: string | null;

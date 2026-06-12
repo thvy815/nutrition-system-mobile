@@ -15,7 +15,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, BORDER_RADIUS, SHADOWS } from '../constants/theme';
 import { WorkoutDay } from '../types/workout';
-import { workoutService } from '../services/workout';
+import { workoutService } from '../services/workout.service';
 
 interface DayCardProps {
   day: WorkoutDay;

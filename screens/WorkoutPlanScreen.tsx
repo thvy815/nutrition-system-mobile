@@ -22,10 +22,10 @@ const REST_IMAGE =
   'https://plus.unsplash.com/premium_photo-1674675646818-01d7a7bae64c?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8dGhpJUUxJUJCJTgxbnxlbnwwfHwwfHx8MA%3D%3D';
 
 export const WorkoutPlanScreen = ({ navigation }: any) => {
-  const { plan, loading, error, getCurrentDayOfWeek, fetchPlan } = useWorkout();
+  const { plan, loading, error, fetchPlan } = useWorkout();
   const [refreshing, setRefreshing] = useState(false);
 
-  const currentDay = plan?.currentDay ?? plan?.plan?.find(d => !d.completed)?.day ?? 1;
+  const currentDay = plan?.days?.find(d => !d.completed)?.day ?? 1;
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -68,7 +68,7 @@ export const WorkoutPlanScreen = ({ navigation }: any) => {
   }
 
   // Empty
-  if (!plan || !plan.plan) {
+  if (!plan || !plan.days) {
     return (
       <ScreenContainer>
         <View style={styles.center}>
@@ -93,12 +93,12 @@ export const WorkoutPlanScreen = ({ navigation }: any) => {
 
         {/* List */}
         <View style={styles.list}>
-          {plan.plan.map((day: WorkoutDay, index: number) => (
+          {plan.days.map((day: WorkoutDay, index: number) => (
             <DayItem
               key={day.day}
               day={day}
               index={index}
-              planLength={plan.plan.length}
+              planLength={plan.days.length}
               currentDay={currentDay}
               isCurrentDay={day.day === currentDay}
               onPress={() => handleDayPress(day.day)}
