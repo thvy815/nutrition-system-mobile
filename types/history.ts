@@ -1,3 +1,4 @@
+// MEAL
 export interface MealNutrition {
   calories?: number;
   protein?: number;
@@ -37,6 +38,51 @@ export interface MealHistoryResponse {
 }
 
 export interface GetMealHistoryParams {
+  page?: number;
+  limit?: number;
+}
+
+// WORKOUT SESSION
+export interface WorkoutHistorySession {
+  _id: string;
+  planId: string;
+  day: number;
+  focus: string;
+
+  exerciseId: string;
+  exerciseName: string;
+  intensity: string;
+  muscleGroups: string[];
+
+  targetSets: number;
+  targetReps: number;
+  completedSets: number;
+  completedReps: number;
+
+  durationMinutes: number;
+  estimatedCalories: number;
+  actualCalories: number;
+
+  perceivedDifficulty: number;
+  performanceScore: number;
+  fatigueImpact: number;
+
+  startTime: string;
+  endTime: string;
+  createdAt: string;
+}
+
+export interface WorkoutHistoryData {
+  sessions: WorkoutHistorySession[];
+  pagination: MealHistoryPagination;
+}
+
+export interface WorkoutHistoryResponse {
+  success: boolean;
+  data: WorkoutHistoryData;
+}
+
+export interface GetWorkoutHistoryParams {
   page?: number;
   limit?: number;
 }

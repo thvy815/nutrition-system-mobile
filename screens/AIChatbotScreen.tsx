@@ -210,7 +210,7 @@ export function AIChatbotScreen() {
             <>
               <TouchableOpacity
                 style={[
-                  styles.sessionChip,
+                  styles.newChatSessionChip,
                   !selectedSessionId && styles.sessionChipActive,
                 ]}
                 onPress={handleNewChat}
@@ -373,6 +373,17 @@ function MessageBubble({ message }: { message: UIChatMessage }) {
 }
 
 const styles = StyleSheet.create({
+  newChatSessionChip: {
+    height: 38,
+    minWidth: 90,
+    paddingHorizontal: SPACING.md,
+    borderRadius: 20,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   disclaimerBox: {
     paddingHorizontal: SPACING.md,
     paddingVertical: 6,
@@ -437,6 +448,7 @@ const styles = StyleSheet.create({
   sessionList: {
     paddingTop: SPACING.md,
     gap: SPACING.sm,
+    alignItems: 'center',
   },
 
   sessionChip: {

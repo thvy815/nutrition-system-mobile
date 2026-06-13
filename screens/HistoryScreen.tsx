@@ -15,8 +15,8 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
 import { ScreenContainer } from '../components/ScreenContainer';
 import { COLORS } from '../constants/theme';
-import { getMealHistory } from '../services/history.service';
-import type { MealHistoryLog } from '../types/history';
+import { getMealHistory, getWorkoutHistory } from '../services/history.service';
+import type { MealHistoryLog, WorkoutHistorySession } from '../types/history';
 import type { RootTabParamList } from '../navigation/AppNavigator';
 
 type HistoryMode = 'nutrition' | 'workout';
@@ -35,7 +35,14 @@ export function HistoryScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const fetchHistory = useCallback(async (nextPage = 1, isRefresh = false) => {
+  const [workoutSessions, setWorkoutSessions] = useState<WorkoutHistorySession[]>([]);
+  const [workoutPage, setWorkoutPage] = useState(1);
+  const [workoutTotalPages, setWorkoutTotalPages] = useState(1);
+  const [loadingWorkout, setLoadingWorkout] = useState(false);
+  const [refreshingWorkout, setRefreshingWorkout] = useState(false);
+  const [loadingMoreWorkout, setLoadingMoreWorkout] = useState(false);
+
+  const fetchMealHistory = useCallback(async (nextPage = 1, isRefresh = false) => {
     try {
       if (nextPage === 1 && !isRefresh) setLoading(true);
       if (nextPage > 1) setLoadingMore(true);
@@ -61,17 +68,51 @@ export function HistoryScreen() {
   }, []);
 
   useEffect(() => {
-    fetchHistory(1);
-  }, [fetchHistory]);
+    fetchMealHistory(1);
+  }, [fetchMealHistory]);
+
+  const fetchWorkoutHistory = useCallback(async (nextPage = 1, isRefresh = false) => {
+    try {
+        if (nextPage === 1 && !isRefresh) setLoadingWorkout(true);
+        if (nextPage > 1) setLoadingMoreWorkout(true);
+
+        const res = await getWorkoutHistory({
+        page: nextPage,
+        limit: 20,
+        });
+
+        const newSessions = res.data.sessions;
+        const pagination = res.data.pagination;
+
+        setWorkoutSessions(prev =>
+        nextPage === 1 ? newSessions : [...prev, ...newSessions],
+        );
+
+        setWorkoutPage(pagination.page);
+        setWorkoutTotalPages(pagination.totalPages);
+    } catch (err) {
+        console.log('[HistoryScreen] fetch workout history error:', err);
+    } finally {
+        setLoadingWorkout(false);
+        setRefreshingWorkout(false);
+        setLoadingMoreWorkout(false);
+    }
+    }, []);
+
+  useEffect(() => {
+    if (mode === 'workout' && workoutSessions.length === 0) {
+        fetchWorkoutHistory(1);
+    }
+    }, [mode, workoutSessions.length, fetchWorkoutHistory]);
 
   const handleRefresh = () => {
     setRefreshing(true);
-    fetchHistory(1, true);
+    fetchMealHistory(1, true);
   };
 
   const handleLoadMore = () => {
     if (!loadingMore && page < totalPages) {
-      fetchHistory(page + 1);
+      fetchMealHistory(page + 1);
     }
   };
 
@@ -183,15 +224,104 @@ export function HistoryScreen() {
     );
   };
 
-  const renderWorkoutContent = () => {
+  const renderWorkoutItem = ({ item }: { item: WorkoutHistorySession }) => {
     return (
-      <View style={styles.centerBox}>
-        <Ionicons name="barbell-outline" size={52} color={COLORS.textMuted} />
-        <Text style={styles.emptyTitle}>Chưa có lịch sử bài tập</Text>
-        <Text style={styles.emptyDesc}>
-          Phần này sẽ hiển thị sau khi có API bài tập.
-        </Text>
-      </View>
+        <View style={styles.card}>
+        <View style={styles.workoutHeader}>
+            <View>
+            <Text style={styles.foodName} numberOfLines={1}>
+                {item.exerciseName || 'Bài tập'}
+            </Text>
+            <Text style={styles.dateText}>
+                Ngày {item.day} • {formatDate(item.endTime)}
+            </Text>
+            </View>
+
+            <View style={styles.kcalBadge}>
+            <Text style={styles.kcalText}>{item.actualCalories || 0} kcal</Text>
+            </View>
+        </View>
+
+        <View style={styles.nutritionRow}>
+            <View style={styles.nutritionItem}>
+            <Text style={styles.nutritionValue}>{item.durationMinutes || 0}</Text>
+            <Text style={styles.nutritionLabel}>phút</Text>
+            </View>
+
+            <View style={styles.nutritionItem}>
+            <Text style={styles.nutritionValue}>
+                {item.completedSets || 0}/{item.targetSets || 0}
+            </Text>
+            <Text style={styles.nutritionLabel}>Sets</Text>
+            </View>
+
+            <View style={styles.nutritionItem}>
+            <Text style={styles.nutritionValue}>
+                {item.performanceScore || 0}/10
+            </Text>
+            <Text style={styles.nutritionLabel}>Hiệu suất</Text>
+            </View>
+
+            <View style={styles.nutritionItem}>
+            <Text style={styles.nutritionValue}>
+                {item.fatigueImpact || 0}/10
+            </Text>
+            <Text style={styles.nutritionLabel}>Mệt mỏi</Text>
+            </View>
+        </View>
+        </View>
+    );
+    };
+
+  const renderWorkoutContent = () => {
+    if (loadingWorkout) {
+        return (
+        <View style={styles.centerBox}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Đang tải lịch sử bài tập...</Text>
+        </View>
+        );
+    }
+
+    return (
+        <FlatList
+        data={workoutSessions}
+        keyExtractor={item => item._id}
+        renderItem={renderWorkoutItem}
+        refreshControl={
+            <RefreshControl
+            refreshing={refreshingWorkout}
+            onRefresh={() => {
+                setRefreshingWorkout(true);
+                fetchWorkoutHistory(1, true);
+            }}
+            />
+        }
+        onEndReached={() => {
+            if (!loadingMoreWorkout && workoutPage < workoutTotalPages) {
+            fetchWorkoutHistory(workoutPage + 1);
+            }
+        }}
+        onEndReachedThreshold={0.3}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={workoutSessions.length === 0 && styles.emptyList}
+        ListEmptyComponent={
+            <View style={styles.centerBox}>
+            <Ionicons name="barbell-outline" size={52} color={COLORS.textMuted} />
+            <Text style={styles.emptyTitle}>Chưa có lịch sử bài tập</Text>
+            <Text style={styles.emptyDesc}>
+                Các bài tập đã hoàn thành sẽ hiển thị tại đây.
+            </Text>
+            </View>
+        }
+        ListFooterComponent={
+            loadingMoreWorkout ? (
+            <View style={styles.footerLoading}>
+                <ActivityIndicator size="small" color={COLORS.primary} />
+            </View>
+            ) : null
+        }
+        />
     );
   };
 
@@ -270,6 +400,33 @@ export function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
+  workoutHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+    gap: 12,
+    },
+
+    kcalBadge: {
+    backgroundColor: COLORS.background,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    },
+
+    kcalText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.primary,
+    },
+
+    workoutDesc: {
+    marginTop: 10,
+    fontSize: 13,
+    color: COLORS.textMuted,
+    },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
