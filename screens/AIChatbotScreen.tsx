@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,6 +23,7 @@ import {
   deleteChatSession
 } from '../services/chat.service';
 import type { ChatSession, UIChatMessage } from '../types/chat';
+import Markdown from 'react-native-markdown-display';
 
 const WELCOME_MESSAGE: UIChatMessage = {
   id: 'welcome',
@@ -89,18 +91,33 @@ export function AIChatbotScreen() {
   }
 
   async function handleDeleteSession(sessionId: string) {
-    try {
-      await deleteChatSession(sessionId);
+    Alert.alert(
+    'Xóa đoạn chat',
+    'Bạn có chắc chắn muốn xóa đoạn chat này không?',
+    [
+      {
+        text: 'Hủy',
+        style: 'cancel',
+      },
+      {
+        text: 'Xóa',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteChatSession(sessionId);
 
-      setSessions(prev => prev.filter(item => item._id !== sessionId));
+            setSessions(prev => prev.filter(item => item._id !== sessionId));
 
-      if (selectedSessionId === sessionId) {
-        setSelectedSessionId(null);
-        setMessages([WELCOME_MESSAGE]);
+            if (selectedSessionId === sessionId) {
+              setSelectedSessionId(null);
+              setMessages([WELCOME_MESSAGE]);
+            }
+          } catch (error) {
+            console.error('delete session error:', error);
+          }
+        }
       }
-    } catch (error) {
-      console.error('delete session error:', error);
-    }
+    ])
   }
 
   function handleNewChat() {
@@ -312,6 +329,8 @@ export function AIChatbotScreen() {
 }
 
 function MessageBubble({ message }: { message: UIChatMessage }) {
+  const formattedText = message.text.replace(/\\n/g, '\n');
+
   return (
     <View
       style={[
@@ -319,14 +338,36 @@ function MessageBubble({ message }: { message: UIChatMessage }) {
         message.isUser ? styles.userBubble : styles.aiBubble,
       ]}
     >
-      <Text
-        style={[
-          styles.bubbleText,
-          message.isUser ? styles.userBubbleText : styles.aiBubbleText,
-        ]}
-      >
-        {message.text}
-      </Text>
+      {message.isUser ? (
+        <Text style={[styles.bubbleText, styles.userBubbleText]}>
+          {formattedText}
+        </Text>
+      ) : (
+        <Markdown
+          style={{
+            body: {
+              fontSize: 16,
+              lineHeight: 22,
+              color: COLORS.text,
+            },
+            strong: {
+              fontWeight: '700',
+              color: COLORS.text,
+            },
+            bullet_list: {
+              marginVertical: 4,
+            },
+            ordered_list: {
+              marginVertical: 4,
+            },
+            list_item: {
+              marginBottom: 4,
+            },
+          }}
+        >
+          {formattedText}
+        </Markdown>
+      )}
     </View>
   );
 }

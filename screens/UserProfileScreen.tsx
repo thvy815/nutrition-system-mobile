@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card, ScreenContainer } from '../components';
 import { useAuth } from '../contexts/AuthContext';
@@ -28,6 +28,24 @@ export function UserProfileScreen() {
   const [dietaryInput, setDietaryInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function handleLogoutConfirm() {
+    Alert.alert(
+      'Đăng xuất',
+      'Bạn có chắc chắn muốn đăng xuất không?',
+      [
+        {
+          text: 'Hủy',
+          style: 'cancel',
+        },
+        {
+          text: 'Đăng xuất',
+          style: 'destructive',
+          onPress: logout,
+        },
+      ]
+    );
+  }
 
   useEffect(() => {
     if (!token) return;
@@ -350,7 +368,7 @@ export function UserProfileScreen() {
 
       <TouchableOpacity
         style={styles.logoutButton}
-        onPress={logout}
+        onPress={handleLogoutConfirm}
         activeOpacity={0.8}
       >
         <Ionicons name="log-out" size={22} color={COLORS.error} />
