@@ -8,6 +8,7 @@ import { WorkoutProvider } from './contexts/WorkoutContext';
 import { AppNavigator } from './navigation';
 import { LoginScreen } from './screens';
 import { COLORS } from './constants/theme';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 function RootNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -32,10 +33,12 @@ export default function App() {
     <SafeAreaProvider>
       <AuthProvider>
         <WorkoutProvider>
+          <ErrorBoundary>
           <NavigationContainer>
             <StatusBar style="dark" />
             <RootNavigator />
           </NavigationContainer>
+          </ErrorBoundary>
         </WorkoutProvider>
       </AuthProvider>
     </SafeAreaProvider>

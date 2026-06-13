@@ -120,46 +120,62 @@ export function UserProfileScreen() {
       )}
       {error && !loading && <Text style={styles.errorText}>{error}</Text>}
 
-      {/* Basic Info */}
+      
+      {/* BMI */}
       <Card style={styles.card}>
-        <Text style={styles.sectionTitle}>Tài khoản</Text>
-
-        <View style={styles.inputRow}>
-          <Text style={styles.label}>Email</Text>
-          <Text style={styles.valueText}>{profile?.email}</Text>
+        <View style={styles.calorieHeader}>
+          <Ionicons name="body" size={24} color={COLORS.secondary} />
+          <Text style={styles.cardTitle}>Chỉ số cơ thể</Text>
         </View>
 
-        <View style={styles.inputRow}>
-          <Text style={styles.label}>Trạng thái</Text>
-          <Text
-            style={[
-              styles.valueText,
-              { color: profile?.isEmailVerified ? 'green' : 'orange' },
-            ]}
-          >
-            {profile?.isEmailVerified ? 'Đã xác thực' : 'Chưa xác thực'}
-          </Text>
+        <View style={styles.statsRow}>
+          <View style={styles.stat}>
+            <Text style={styles.statValue}>{profile.height} cm</Text>
+            <Text style={styles.statLabel}>Chiều cao</Text>
+          </View>
+
+          <View style={styles.stat}>
+            <Text style={styles.statValue}>{profile.weight} kg</Text>
+            <Text style={styles.statLabel}>Cân nặng</Text>
+          </View>
+
+          <View style={styles.stat}>
+            <Text style={[styles.statValue, { color: getBmiColor(bmiValue) }]}>{bmi}</Text>
+            <Text style={styles.statLabel}>BMI</Text>
+          </View>
         </View>
       </Card>
 
       <Card style={styles.card}>
         <Text style={styles.sectionTitle}>Thông tin cơ bản</Text>
-        <View style={styles.inputRow}>
-          <Text style={styles.label}>Tên</Text>
-          <TextInput
-            style={styles.input}
-            value={profile.name}
-            onChangeText={(v) => updateProfile('name', v)}
-          />
-        </View>
-        <View style={styles.inputRow}>
-          <Text style={styles.label}>Tuổi</Text>
-          <TextInput
-            style={styles.input}
-            value={String(profile.age)}
-            onChangeText={(v) => updateProfile('age', parseInt(v, 10) || 0)}
-            keyboardType="number-pad"
-          />
+        <View style={styles.doubleRow}>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Tên</Text>
+
+            <TextInput
+              style={styles.input}
+              value={profile.name}
+              onChangeText={(v) =>
+                updateProfile('name', v)
+              }
+            />
+          </View>
+
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Tuổi</Text>
+
+            <TextInput
+              style={styles.input}
+              value={String(profile.age)}
+              onChangeText={(v) =>
+                updateProfile(
+                  'age',
+                  parseInt(v, 10) || 0
+                )
+              }
+              keyboardType="number-pad"
+            />
+          </View>
         </View>
         <View style={styles.inputRow}>
           <Text style={styles.label}>Giới tính</Text>
@@ -185,42 +201,37 @@ export function UserProfileScreen() {
             ))}
           </View>
         </View>
-        <View style={styles.inputRow}>
-          <Text style={styles.label}>Chiều cao (cm)</Text>
-          <TextInput
-            style={styles.input}
-            value={String(profile.height)}
-            onChangeText={(v) => updateProfile('height', parseInt(v, 10) || 0)}
-            keyboardType="number-pad"
-          />
-        </View>
-        <View style={styles.inputRow}>
-          <Text style={styles.label}>Cân nặng (kg)</Text>
-          <TextInput
-            style={styles.input}
-            value={String(profile.weight)}
-            onChangeText={(v) => updateProfile('weight', parseInt(v, 10) || 0)}
-            keyboardType="decimal-pad"
-          />
-        </View>
-      </Card>
+        <View style={styles.doubleRow}>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Chiều cao (cm)</Text>
 
-      {/* BMI */}
-      <Card style={styles.card}>
-        <View style={styles.calorieHeader}>
-          <Ionicons name="body" size={24} color={COLORS.secondary} />
-          <Text style={styles.cardTitle}>Chỉ số cơ thể</Text>
-        </View>
-
-        <View style={styles.statsRow}>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{profile.weight} kg</Text>
-            <Text style={styles.statLabel}>Cân nặng</Text>
+            <TextInput
+              style={styles.input}
+              value={String(profile.height)}
+              onChangeText={(v) =>
+                updateProfile(
+                  'height',
+                  parseInt(v, 10) || 0
+                )
+              }
+              keyboardType="number-pad"
+            />
           </View>
 
-          <View style={styles.stat}>
-            <Text style={[styles.statValue, { color: getBmiColor(bmiValue) }]}>{bmi}</Text>
-            <Text style={styles.statLabel}>BMI</Text>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Cân nặng (kg)</Text>
+
+            <TextInput
+              style={styles.input}
+              value={String(profile.weight)}
+              onChangeText={(v) =>
+                updateProfile(
+                  'weight',
+                  parseInt(v, 10) || 0
+                )
+              }
+              keyboardType="decimal-pad"
+            />
           </View>
         </View>
       </Card>
@@ -254,7 +265,11 @@ export function UserProfileScreen() {
       {/* Health Goal */}
       <Card style={styles.card}>
         <Text style={styles.sectionTitle}>Mục tiêu sức khỏe</Text>
-        <View style={styles.goalGrid}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.goalRow}
+        >
           {GOAL_OPTIONS.map((opt) => (
             <TouchableOpacity
               key={opt.value}
@@ -289,7 +304,7 @@ export function UserProfileScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
       </Card>
 
       {/* Dietary Restrictions */}
@@ -310,6 +325,28 @@ export function UserProfileScreen() {
           multiline
         />
       </Card>
+      
+      {/* Basic Info */}
+      <Card style={styles.card}>
+        <Text style={styles.sectionTitle}>Tài khoản</Text>
+
+        <View style={styles.inputRow}>
+          <Text style={styles.label}>Email</Text>
+          <Text style={styles.valueText}>{profile?.email}</Text>
+        </View>
+
+        <View style={styles.inputRow}>
+          <Text style={styles.label}>Trạng thái</Text>
+          <Text
+            style={[
+              styles.valueText,
+              { color: profile?.isEmailVerified ? 'green' : 'orange' },
+            ]}
+          >
+            {profile?.isEmailVerified ? 'Đã xác thực' : 'Chưa xác thực'}
+          </Text>
+        </View>
+      </Card>
 
       <TouchableOpacity
         style={styles.logoutButton}
@@ -324,6 +361,14 @@ export function UserProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  doubleRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+
+  halfInput: {
+    flex: 1,
+  },
   title: {
     fontSize: 28,
     fontWeight: '700',
@@ -403,19 +448,24 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: '#FFF',
   },
-  goalGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.sm,
+  goalRow: {
+    paddingRight: 12,
   },
   goalButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
-    paddingVertical: SPACING.sm,
+    gap: 8,
+
     paddingHorizontal: SPACING.md,
-    borderRadius: 12,
+    paddingVertical: SPACING.sm,
+
+    borderRadius: 20,
+
     backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    marginRight: 12,
   },
   goalButtonActive: {
     backgroundColor: COLORS.primary,

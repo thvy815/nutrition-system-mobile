@@ -159,7 +159,7 @@ const DayItem = ({
           <View
             style={[
               styles.line,
-              (isPast) && {
+              (isCurrentDay) && {
                 backgroundColor: COLORS.primary,
               },
             ]}
