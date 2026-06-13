@@ -8,3 +8,4 @@ export { WorkoutPlanScreen } from './WorkoutPlanScreen';
 export { DayDetailScreen } from './DayDetailScreen';
 export { ExerciseDetailScreen } from './ExerciseDetailScreen';
 export { WorkoutSessionScreen } from './WorkoutSessionScreen';
+export { HistoryScreen } from './HistoryScreen';

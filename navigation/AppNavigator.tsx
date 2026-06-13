@@ -12,6 +12,7 @@ import {
   DayDetailScreen,
   ExerciseDetailScreen,
   WorkoutSessionScreen,
+  HistoryScreen
 } from '../screens';
 import { COLORS } from '../constants/theme';
 
@@ -21,6 +22,7 @@ export type RootTabParamList = {
   MealRecommendation: undefined;
   WorkoutPlan: undefined;
   AIChatbot: undefined;
+  History: undefined;
   UserProfile: undefined;
 };
 
@@ -131,13 +133,23 @@ export function AppNavigator() {
         }}
       />
       <Tab.Screen
+        name="History"
+        component={HistoryScreen}
+        options={{
+          tabBarLabel: 'Lịch sử',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="time" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
         name="UserProfile"
         component={UserProfileScreen}
         options={{
-          tabBarLabel: 'Hồ sơ',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" size={size} color={color} />
-          ),
+          tabBarButton: () => null,
+          tabBarItemStyle: {
+            display: 'none',
+          },
         }}
       />
     </Tab.Navigator>
