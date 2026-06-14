@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { Video } from 'expo-av';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useWorkout } from '../contexts/WorkoutContext';
@@ -31,7 +30,6 @@ interface SessionState {
   isRunning: boolean;
   isPaused: boolean;
   elapsedSeconds: number;
-
   completedSets: number;
   completedReps: number;
 }
@@ -51,6 +49,7 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<WorkoutSessionData | null>(null);
+  const [perceivedDifficulty, setPerceivedDifficulty] = useState(6);
   const [sessionState, setSessionState] = useState<SessionState>({
     isRunning: false,
     isPaused: false,
@@ -181,23 +180,156 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
     };
   }, [sessionState.isRunning, sessionState.isPaused]);
 
-  const completeRep = () => {
+  const decreaseRep = () => {
     setSessionState(prev => ({
       ...prev,
-      completedReps:
-        prev.completedReps + 1,
+      completedReps: Math.max(0, prev.completedReps - 1),
     }));
   };
 
-  const completeSet = () => {
+  const decreaseSet = () => {
     setSessionState(prev => ({
       ...prev,
-      completedSets:
-        prev.completedSets + 1,
+      completedSets: Math.max(0, prev.completedSets - 1),
     }));
   };
 
-   const stopSession = async () => {
+  const isOverTraining = (nextSets: number, nextReps: number) => {
+    const targetSets = exerciseDetailsFromDay?.sets || 3;
+
+    const targetRepsText = exerciseDetailsFromDay?.reps || '8-12';
+    const maxTargetReps =
+      Number(targetRepsText.toString().split('-').pop()) || 12;
+
+    const targetTotalReps = targetSets * maxTargetReps;
+    const targetDurationMinutes = exerciseDetailsFromDay?.duration || 8;
+
+    const elapsedMinutes = sessionState.elapsedSeconds / 60;
+
+    const progressByTime =
+      Math.max(elapsedMinutes / targetDurationMinutes, 0.1);
+
+    const allowedRepsByTime =
+      Math.ceil(targetTotalReps * progressByTime * 1.5);
+
+    const allowedSetsByTime =
+      Math.ceil(targetSets * progressByTime * 1.5);
+
+    return (
+      nextReps > allowedRepsByTime ||
+      nextSets > allowedSetsByTime ||
+      nextReps > targetTotalReps * 1.3 ||
+      nextSets > targetSets + 1
+    );
+  };
+
+  const showOverTrainingAlert = () => {
+    Alert.alert(
+      'Cảnh báo dữ liệu bất thường',
+      'Số set hoặc rep đang tăng nhanh hơn mức hợp lý so với thời gian tập. Vui lòng kiểm tra lại để tránh nhập nhầm hoặc tập quá sức.',
+      [{ text: 'Đã hiểu' }]
+    );
+  };
+
+  const increaseRep = () => {
+    const nextReps = sessionState.completedReps + 1;
+    const nextSets = sessionState.completedSets;
+
+    if (isOverTraining(nextSets, nextReps)) {
+      showOverTrainingAlert();
+      return;
+    }
+
+    setSessionState(prev => ({
+      ...prev,
+      completedReps: nextReps,
+    }));
+  };
+
+  const increaseSet = () => {
+    const nextSets = sessionState.completedSets + 1;
+    const nextReps = sessionState.completedReps;
+
+    if (isOverTraining(nextSets, nextReps)) {
+      showOverTrainingAlert();
+      return;
+    }
+
+    setSessionState(prev => ({
+      ...prev,
+      completedSets: nextSets,
+    }));
+  };
+
+  const checkOverTrainingWarning = () => {
+    const targetSets = exerciseDetailsFromDay?.sets || 3;
+
+    const targetRepsText = exerciseDetailsFromDay?.reps || '8-12';
+    const maxTargetReps =
+      Number(targetRepsText.toString().split('-').pop()) || 12;
+
+    const targetTotalReps = targetSets * maxTargetReps;
+
+    const targetDurationMinutes =
+      exerciseDetailsFromDay?.duration || 8;
+
+    const elapsedMinutes =
+      sessionState.elapsedSeconds / 60;
+
+    const completedReps = sessionState.completedReps;
+    const completedSets = sessionState.completedSets;
+
+    const progressByTime =
+      Math.max(elapsedMinutes / targetDurationMinutes, 0.1);
+
+    const allowedRepsByTime =
+      Math.ceil(targetTotalReps * progressByTime * 1.5);
+
+    const allowedSetsByTime =
+      Math.ceil(targetSets * progressByTime * 1.5);
+
+    const repsTooFast =
+      completedReps > allowedRepsByTime;
+
+    const setsTooFast =
+      completedSets > allowedSetsByTime;
+
+    const repsTooMuch =
+      completedReps > targetTotalReps * 1.3;
+
+    const setsTooMuch =
+      completedSets > targetSets + 1;
+
+    return (
+      repsTooFast ||
+      setsTooFast ||
+      repsTooMuch ||
+      setsTooMuch
+    );
+  };
+
+  const stopSession = async () => {
+    if (checkOverTrainingWarning()) {
+      Alert.alert(
+        'Cảnh báo dữ liệu bất thường',
+        'Bạn đang ghi nhận số set hoặc rep cao hơn mức hợp lý so với thời gian tập. Vui lòng kiểm tra lại để tránh nhập nhầm hoặc tập quá sức.',
+        [
+          { text: 'Kiểm tra lại', style: 'cancel' },
+          {
+            text: 'Vẫn lưu',
+            style: 'destructive',
+            onPress: submitStopSession,
+          },
+        ]
+      );
+
+      return;
+    }
+
+    submitStopSession();
+  };
+
+  const submitStopSession = async () => {
     try {
       if (!sessionId.current) return;
 
@@ -209,13 +341,14 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
         sessionId: sessionId.current, 
         completedSets: sessionState.completedSets, 
         completedReps: sessionState.completedReps, 
-        perceivedDifficulty: 6, 
+        perceivedDifficulty,
       });
       
       Alert.alert(
         'Buổi tập kết thúc',
-        `Thời gian: ${Math.round(result.durationMinutes || 0)} phút\n
-        Calo đốt cháy: ${Math.round(result.actualCalories || 0)} kcal`,
+        `Thời gian: ${Math.round(result.durationMinutes || 0)} phút\n` +
+        `Calo đốt cháy: ${Math.round(result.actualCalories || 0)} kcal\n` +
+        `Độ khó: ${perceivedDifficulty}/10`,
         [
           {
             text: 'OK',
@@ -231,10 +364,10 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
         isRunning: false,
         isPaused: false,
         elapsedSeconds: 0,
-
         completedSets: 0,
         completedReps: 0,
       });
+      setPerceivedDifficulty(6);
     } catch (err) {
       console.error('Error stopping session:', err);
       Alert.alert('Lỗi', 'Không thể kết thúc buổi tập');
@@ -380,98 +513,144 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
 
         {/* Timer Section */}
         {hasStarted && (
-          <View style={styles.timerSection}>
-            <View style={styles.timerDisplay}>
-              <Text style={styles.timerText}>{formatTime(sessionState.elapsedSeconds)}</Text>
-            </View>
+          <View style={styles.compactWorkoutCard}>
+            <Text style={styles.compactTimer}>
+              {formatTime(sessionState.elapsedSeconds)}
+            </Text>
 
-            {/* Current Set/Rep Info */}
-            <View style={styles.setInfoContainer}>
-              <View style={styles.setIndicator}>
-                <Text style={styles.setLabel}>Bộ</Text>
-                <Text style={styles.setNumber}>{sessionState.completedSets}/{sets.length || 3}</Text>
-              </View>
-              <View style={styles.setIndicator}>
-                <Text style={styles.setLabel}>Reps</Text>
-                <Text style={styles.setNumber}>{sessionState.completedReps}</Text>
-              </View>
-            </View>
-
-            <View style={styles.repSetActions}>
-              <TouchableOpacity
-                style={styles.repButton}
-                onPress={completeRep}
-              >
-                <MaterialCommunityIcons
-                  name="arm-flex"
-                  size={20}
-                  color={COLORS.surface}
-                />
-
-                <Text style={styles.repSetButtonText}>
-                  + REP
+            <View style={styles.compactStatsRow}>
+              <View style={styles.compactStatBox}>
+                <Text style={styles.compactStatLabel}>Sets</Text>
+                <Text style={styles.compactStatValue}>
+                  {sessionState.completedSets}/{sets.length || 3}
                 </Text>
-              </TouchableOpacity>
+              </View>
 
-              <TouchableOpacity
-                style={styles.setButton}
-                onPress={completeSet}
-              >
-                <MaterialCommunityIcons
-                  name="check-circle"
-                  size={20}
-                  color={COLORS.surface}
-                />
-
-                <Text style={styles.repSetButtonText}>
-                  HOÀN THÀNH SET
+              <View style={styles.compactStatBox}>
+                <Text style={styles.compactStatLabel}>Reps</Text>
+                <Text style={styles.compactStatValue}>
+                  {sessionState.completedReps}
                 </Text>
-              </TouchableOpacity>
+              </View>
+
+              <View style={styles.compactStatBox}>
+                <Text style={styles.compactStatLabel}>Nghỉ</Text>
+                <Text style={styles.compactStatValue}>
+                  {sets[Math.max(sessionState.completedSets, 0)]?.restSeconds || 60}s
+                </Text>
+              </View>
             </View>
 
-            {/* Rest Timer (if available) */}
-            {sets.length > 0 && sessionState.completedSets <= sets.length && (
-              <View style={styles.restInfo}>
-                <Text style={styles.restLabel}>Thời gian nghỉ</Text>
-                <Text style={styles.restTime}>{sets[sessionState.completedSets - 1]?.restSeconds || 60}s</Text>
-              </View>
-            )}
-          </View>
-        )}
+            <View style={styles.compactCounterRow}>
+              <View style={styles.compactCounterGroup}>
+                <Text style={styles.compactCounterLabel}>Sets</Text>
 
-        {/* Action Buttons */}
-        <View style={styles.buttonSection}>
-          {!hasStarted ? (
-            <TouchableOpacity style={styles.startButton} onPress={startSession}>
-              <MaterialCommunityIcons name="play" size={24} color={COLORS.surface} />
-              <Text style={styles.startButtonText}>BẮT ĐẦU TẬP</Text>
-            </TouchableOpacity>
-          ) : (
-            <>
+                <View style={styles.compactControl}>
+                  <TouchableOpacity
+                    style={styles.compactMinusBtn}
+                    onPress={decreaseSet}
+                  >
+                    <MaterialCommunityIcons name="minus" size={18} color={COLORS.primary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.compactPlusBtn}
+                    onPress={increaseSet}
+                  >
+                    <MaterialCommunityIcons name="plus" size={18} color={COLORS.surface} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.compactCounterGroup}>
+                <Text style={styles.compactCounterLabel}>Reps</Text>
+
+                <View style={styles.compactControl}>
+                  <TouchableOpacity
+                    style={styles.compactMinusBtn}
+                    onPress={decreaseRep}
+                  >
+                    <MaterialCommunityIcons name="minus" size={18} color={COLORS.primary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.compactPlusBtn}
+                    onPress={increaseRep}
+                  >
+                    <MaterialCommunityIcons name="plus" size={18} color={COLORS.surface} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.compactDifficulty}>
+              <View style={styles.compactDifficultyHeader}>
+                <Text style={styles.compactDifficultyTitle}>Độ khó</Text>
+                <Text style={styles.compactDifficultyValue}>
+                  {perceivedDifficulty}/10
+                </Text>
+              </View>
+
+              <View style={styles.compactDifficultyRow}>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(value => (
+                  <TouchableOpacity
+                    key={value}
+                    style={[
+                      styles.compactDifficultyBtn,
+                      perceivedDifficulty === value && styles.compactDifficultyBtnActive,
+                    ]}
+                    onPress={() => setPerceivedDifficulty(value)}
+                  >
+                    <Text
+                      style={[
+                        styles.compactDifficultyText,
+                        perceivedDifficulty === value && styles.compactDifficultyTextActive,
+                      ]}
+                    >
+                      {value}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.compactActionRow}>
               <TouchableOpacity
-                style={[styles.actionButton, sessionState.isPaused && styles.resumeButton]}
+                style={[
+                  styles.compactActionBtn,
+                  sessionState.isPaused && styles.compactResumeBtn,
+                ]}
                 onPress={togglePause}
               >
                 <MaterialCommunityIcons
                   name={sessionState.isPaused ? 'play' : 'pause'}
-                  size={24}
+                  size={20}
                   color={COLORS.surface}
                 />
-                <Text style={styles.actionButtonText}>
-                  {sessionState.isPaused ? 'TIẾP TỤC' : 'TẠM DỪNG'}
+                <Text style={styles.compactActionText}>
+                  {sessionState.isPaused ? 'Tiếp tục' : 'Tạm dừng'}
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.actionButton, styles.stopButton]}
+                style={[styles.compactActionBtn, styles.compactStopBtn]}
                 onPress={stopSession}
               >
-                <MaterialCommunityIcons name="stop-circle" size={24} color={COLORS.surface} />
-                <Text style={styles.actionButtonText}>DỪNG</Text>
+                <MaterialCommunityIcons name="stop-circle" size={20} color={COLORS.surface} />
+                <Text style={styles.compactActionText}>Dừng</Text>
               </TouchableOpacity>
-            </>
-          )}
-        </View>
+            </View>
+          </View>
+        )}
+
+        {!hasStarted && (
+          <View style={styles.buttonSection}>
+            <TouchableOpacity style={styles.startButton} onPress={startSession}>
+              <MaterialCommunityIcons name="play" size={24} color={COLORS.surface} />
+              <Text style={styles.startButtonText}>BẮT ĐẦU TẬP</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Description */}
         {exercise.description && (
@@ -537,6 +716,188 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
 };
 
 const styles = StyleSheet.create({
+  compactWorkoutCard: {
+    paddingHorizontal: SPACING.md,
+    marginTop: SPACING.lg,
+    marginBottom: SPACING.lg,
+    padding: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    ...SHADOWS.md,
+  },
+
+  compactTimer: {
+    fontSize: 44,
+    fontWeight: '800',
+    color: COLORS.primary,
+    textAlign: 'center',
+    fontFamily: 'Courier New',
+    marginBottom: SPACING.sm,
+  },
+
+  compactStatsRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+
+  compactStatBox: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.md,
+    paddingVertical: SPACING.sm,
+    alignItems: 'center',
+  },
+
+  compactStatLabel: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+
+  compactStatValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+
+  compactCounterRow: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+
+  compactCounterGroup: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.sm,
+  },
+
+  compactCounterLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
+  },
+
+  compactControl: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+  },
+
+  compactMinusBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  compactPlusBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  compactDifficulty: {
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+
+  compactDifficultyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.sm,
+  },
+
+  compactDifficultyTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+
+  compactDifficultyValue: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.primary,
+  },
+
+  compactDifficultyRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+
+  compactDifficultyBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  compactDifficultyBtnActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+
+  compactDifficultyText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+
+  compactDifficultyTextActive: {
+    color: COLORS.surface,
+  },
+
+  compactActionRow: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+  },
+
+  compactActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.primary,
+  },
+
+  compactResumeBtn: {
+    backgroundColor: COLORS.success,
+  },
+
+  compactStopBtn: {
+    backgroundColor: COLORS.error,
+  },
+
+  compactActionText: {
+    marginLeft: SPACING.sm,
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.surface,
+  },
+  counterSection: {
+    gap: SPACING.md,
+    marginBottom: SPACING.lg,
+  },
+
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -938,39 +1299,5 @@ const styles = StyleSheet.create({
   emptyText: {
     marginTop: 8,
     color: COLORS.textSecondary,
-  },
-
-  repSetActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: SPACING.lg,
-    gap: SPACING.md,
-  },
-
-  repButton: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.primary,
-    paddingVertical: SPACING.md,
-    borderRadius: BORDER_RADIUS.md,
-  },
-
-  setButton: {
-    flex: 1.4,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.success,
-    paddingVertical: SPACING.md,
-    borderRadius: BORDER_RADIUS.md,
-  },
-
-  repSetButtonText: {
-    color: COLORS.surface,
-    fontWeight: '700',
-    marginLeft: SPACING.sm,
-    fontSize: 14,
   },
 });

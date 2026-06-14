@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, RefreshControl, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
-import { Card, ScreenContainer, GoalTag, MealCard, RecipeSearchSheet } from '../components';
+import { ScreenContainer, MealCard, RecipeSearchSheet } from '../components';
 import { COLORS, SPACING } from '../constants/theme';
 import {
   getDailyMenuByDate,
@@ -18,6 +18,7 @@ import type {
 } from '../types/dailyMenu';
 import { useNavigation } from '@react-navigation/native';
 import type { Meal } from '../types';
+import { RefreshableScrollView } from '../components/RefreshableScrollView';
 
 const MEAL_LABELS = {
   breakfast: 'Bữa sáng',
@@ -34,7 +35,6 @@ export function MealRecommendationScreen() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [menu, setMenu] = useState<DailyMenuResponse['data'] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
 
   function groupMealsByServingTime(meals: Meal[]) {
@@ -171,9 +171,7 @@ useEffect(() => {
 
 
   const onRefresh = useCallback(async () => {
-  setRefreshing(true);
   await Promise.all([fetchDay(selectedDate), fetchWeek()]);
-  setRefreshing(false);
 }, [selectedDate, fetchDay, fetchWeek]);
 
   const handleToggleCheck = async (meal: Meal) => {
@@ -299,16 +297,10 @@ const handleAddRecipeToMenu = async (params: any) => {
       </TouchableOpacity>
 
 
-      <ScrollView
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[COLORS.primary]}
-          />
-        }
-        showsVerticalScrollIndicator={false}
-      >
+      <RefreshableScrollView
+  onRefreshData={onRefresh}
+  showsVerticalScrollIndicator={false}
+>
         {loading ? (
   <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />
 ) : isEmpty ? (
@@ -333,7 +325,7 @@ const handleAddRecipeToMenu = async (params: any) => {
     );
   })
 )}
-      </ScrollView>
+      </RefreshableScrollView>
 
       {/* Modal search */}
       <RecipeSearchSheet

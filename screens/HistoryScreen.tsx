@@ -10,7 +10,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
 import { ScreenContainer } from '../components/ScreenContainer';
@@ -97,13 +97,19 @@ export function HistoryScreen() {
         setRefreshingWorkout(false);
         setLoadingMoreWorkout(false);
     }
-    }, []);
+  }, []);
 
-  useEffect(() => {
-    if (mode === 'workout' && workoutSessions.length === 0) {
-        fetchWorkoutHistory(1);
-    }
-    }, [mode, workoutSessions.length, fetchWorkoutHistory]);
+  useFocusEffect(
+    useCallback(() => {
+      if (mode === 'nutrition') {
+        fetchMealHistory(1, true);
+      }
+
+      if (mode === 'workout') {
+        fetchWorkoutHistory(1, true);
+      }
+    }, [mode, fetchMealHistory, fetchWorkoutHistory])
+  );
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -149,7 +155,7 @@ export function HistoryScreen() {
 
             <View style={styles.nutritionRow}>
               <View style={styles.nutritionItem}>
-                <Text style={styles.nutritionValue}>
+                <Text style={[styles.nutritionValue, styles.caloriesValue]}>
                   {nutrition?.calories ?? 0}
                 </Text>
                 <Text style={styles.nutritionLabel}>kcal</Text>
@@ -256,15 +262,25 @@ export function HistoryScreen() {
             </View>
 
             <View style={styles.nutritionItem}>
-            <Text style={styles.nutritionValue}>
-                {item.performanceScore || 0}/10
+            <Text
+              style={[
+                styles.nutritionValue,
+                (item.performanceScore || 0) >= 7 && styles.goodScore,
+              ]}
+            >
+              {item.performanceScore || 0}/10
             </Text>
             <Text style={styles.nutritionLabel}>Hiệu suất</Text>
             </View>
 
             <View style={styles.nutritionItem}>
-            <Text style={styles.nutritionValue}>
-                {item.fatigueImpact || 0}/10
+            <Text
+              style={[
+                styles.nutritionValue,
+                (item.fatigueImpact || 0) >= 7 && styles.badScore,
+              ]}
+            >
+              {item.fatigueImpact || 0}/10
             </Text>
             <Text style={styles.nutritionLabel}>Mệt mỏi</Text>
             </View>
@@ -350,7 +366,10 @@ export function HistoryScreen() {
             styles.modeButton,
             mode === 'nutrition' && styles.modeButtonActive,
           ]}
-          onPress={() => setMode('nutrition')}
+          onPress={() => {
+            setMode('nutrition');
+            fetchMealHistory(1, true);
+          }}
           activeOpacity={0.8}
         >
           <Ionicons
@@ -373,7 +392,10 @@ export function HistoryScreen() {
             styles.modeButton,
             mode === 'workout' && styles.modeButtonActive,
           ]}
-          onPress={() => setMode('workout')}
+          onPress={() => {
+            setMode('workout');
+            fetchWorkoutHistory(1, true);
+          }}
           activeOpacity={0.8}
         >
           <Ionicons
@@ -400,6 +422,18 @@ export function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
+  caloriesValue: {
+    color: COLORS.primary,
+  },
+
+  goodScore: {
+    color: COLORS.primary, // xanh
+  },
+
+  badScore: {
+    color: COLORS.error, // đỏ
+  },
+
   workoutHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
