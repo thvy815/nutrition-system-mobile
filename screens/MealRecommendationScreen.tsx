@@ -1,9 +1,25 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
-import { ScreenContainer, MealCard, RecipeSearchSheet } from '../components';
-import { COLORS, SPACING } from '../constants/theme';
+import {
+  ScreenContainer,
+  MealCard,
+  RecipeSearchSheet,
+  ScreenHeader,
+  SectionHeader,
+  Button,
+  LoadingState,
+  EmptyState,
+} from '../components';
+import {
+  BORDER_RADIUS,
+  COLORS,
+  METRIC_COLORS,
+  SHADOWS,
+  SPACING,
+  TYPOGRAPHY,
+} from '../constants/theme';
 import {
   getDailyMenuByDate,
   getDailyMenuRecommendation,
@@ -11,14 +27,10 @@ import {
   getDailyMenusByRange,
   updateRecipeInMenu,
   deleteRecipeFromMenu,
-  addRecipeToMenu
+  addRecipeToMenu,
 } from '../services/dailyMenu';
-import type {
-  DailyMenuResponse,
-} from '../types/dailyMenu';
-import { useNavigation } from '@react-navigation/native';
+import type { DailyMenuResponse } from '../types/dailyMenu';
 import type { Meal } from '../types';
-import { RefreshableScrollView } from '../components/RefreshableScrollView';
 
 const MEAL_LABELS = {
   breakfast: 'Bữa sáng',
@@ -28,63 +40,75 @@ const MEAL_LABELS = {
   other: 'Khác',
 };
 
+const MEAL_ICONS = {
+  breakfast: 'sunny-outline',
+  lunch: 'restaurant-outline',
+  dinner: 'moon-outline',
+  snack: 'cafe-outline',
+  other: 'ellipsis-horizontal-circle-outline',
+} as const;
+
+type WeekDay = {
+  dateStr: string;
+  day: number;
+  label: string;
+  calories: number;
+  hasData: boolean;
+};
+
+function groupMealsByServingTime(meals: Meal[]) {
+  const groups = {
+    breakfast: [] as Meal[],
+    lunch: [] as Meal[],
+    dinner: [] as Meal[],
+    snack: [] as Meal[],
+    other: [] as Meal[],
+  };
+
+  meals.forEach((meal) => {
+    const key = (meal.servingTime || 'other') as keyof typeof groups;
+    (groups[key] ?? groups.other).push(meal);
+  });
+
+  return groups;
+}
+
+// ===== helpers =====
+const getMonday = (date: Date) => {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d;
+};
+
+// Ngày theo giờ máy (VN), tránh lệch ngày do toISOString() dùng UTC trước 7h sáng.
+const toDateStr = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 export function MealRecommendationScreen() {
-  const navigation = useNavigation();
   const { token } = useAuth();
-  // const [plan, setPlan] = useState<'daily' | 'weekly'>('daily');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(() => toDateStr(new Date()));
   const [menu, setMenu] = useState<DailyMenuResponse['data'] | null>(null);
   const [loading, setLoading] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [weekData, setWeekData] = useState<WeekDay[]>([]);
 
-  function groupMealsByServingTime(meals: Meal[]) {
-    const groups = {
-      breakfast: [] as Meal[],
-      lunch: [] as Meal[],
-      dinner: [] as Meal[],
-      snack: [] as Meal[],
-      other: [] as Meal[],
-    };
-
-    meals.forEach((meal) => {
-      const key = meal.servingTime || 'other';
-      groups[key].push(meal);
-    });
-
-    return groups;
-  }
-
-  const meals: Meal[] = menu ? transformDailyMenuToMeals(menu) : [];
-  console.log("meals:", meals[0])
-  const groupedMeals = groupMealsByServingTime(meals);
-
-  const [weekData, setWeekData] = useState<any[]>([]);
-
-  // ===== helpers =====
-  const getMonday = (date: Date) => {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    d.setDate(d.getDate() + diff);
-    return d;
-  };
-
-  const toDateStr = (d: Date) => d.toISOString().split('T')[0];
+  const groupedMeals = useMemo(() => {
+    const meals: Meal[] = menu ? transformDailyMenuToMeals(menu) : [];
+    return groupMealsByServingTime(meals);
+  }, [menu]);
 
   // ===== fetch week =====
   const fetchWeek = useCallback(async () => {
     if (!token) return;
 
-    const start = getMonday(new Date(selectedDate));
+    const start = getMonday(new Date(`${selectedDate}T00:00:00`));
     const end = new Date(start);
     end.setDate(start.getDate() + 6);
 
     try {
-      const data = await getDailyMenusByRange(
-        toDateStr(start),
-        toDateStr(end),
-        token
-      );
+      const data = await getDailyMenusByRange(toDateStr(start), toDateStr(end), token);
 
       const days = Array.from({ length: 7 }).map((_, i) => {
         const d = new Date(start);
@@ -92,9 +116,7 @@ export function MealRecommendationScreen() {
 
         const dateStr = toDateStr(d);
 
-        const found = data.find((m: any) =>
-          m.date?.slice(0, 10) === dateStr
-        );
+        const found = data.find((m: any) => m.date?.slice(0, 10) === dateStr);
 
         return {
           dateStr,
@@ -112,176 +134,175 @@ export function MealRecommendationScreen() {
   }, [token, selectedDate]);
 
   // ===== fetch day =====
-  
- const fetchDay = useCallback(async (date: string) => {
-  if (!token) return;
-  setLoading(true);
-  try {
-    const data = await getDailyMenuByDate(date, token);
-    setMenu(data);
-  } catch {
-    setMenu(null);
-  } finally {
-    setLoading(false);
-  }
-}, [token]);
-
- useEffect(() => {
-  fetchWeek();
-}, [fetchWeek]);
-
-useEffect(() => {
-  fetchDay(selectedDate);
-}, [selectedDate, fetchDay]);
-
-
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Ionicons name="restaurant-outline" size={64} color={COLORS.textSecondary} />
-      <Text style={styles.emptyText}>Chưa có thực đơn cho ngày này</Text>
-
-      {/* Divider */}
-      <View style={styles.dividerRow}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>hoặc</Text>
-        <View style={styles.dividerLine} />
-      </View>
-
-      {/* AI gợi ý */}
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={async () => {
-  if (!token) return;
-  setLoading(true);
-  try {
-    const data = await getDailyMenuRecommendation(selectedDate, token);
-    setMenu(data);
-  } catch {
-    setMenu(null);
-  } finally {
-    setLoading(false);
-  }
-}}
-      >
-        <Ionicons name="bulb-outline" size={20} color="#FFF" />
-        <Text style={styles.primaryText}>Lấy gợi ý thực đơn</Text>
-      </TouchableOpacity>
-    </View>
+  const fetchDay = useCallback(
+    async (date: string) => {
+      if (!token) return;
+      setLoading(true);
+      try {
+        const data = await getDailyMenuByDate(date, token);
+        setMenu(data);
+      } catch {
+        setMenu(null);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token],
   );
 
+  useEffect(() => {
+    fetchWeek();
+  }, [fetchWeek]);
+
+  useEffect(() => {
+    fetchDay(selectedDate);
+  }, [selectedDate, fetchDay]);
 
   const onRefresh = useCallback(async () => {
-  await Promise.all([fetchDay(selectedDate), fetchWeek()]);
-}, [selectedDate, fetchDay, fetchWeek]);
+    await Promise.all([fetchDay(selectedDate), fetchWeek()]);
+  }, [selectedDate, fetchDay, fetchWeek]);
 
-  const handleToggleCheck = async (meal: Meal) => {
-    if (!token || !menu) return;
-
+  const handleRecommend = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
     try {
-      const updated = await updateRecipeInMenu(
-        {
-          date: selectedDate,
-          dailyMenuId: meal.dailyMenuId,
-          recipeItemId: meal.id,
-          checked: !meal.isChecked,
-        },
-        token
-      );
-
-      setMenu(updated); // cập nhật lại UI
-    } catch (err) {
-      console.error('toggle check error', err);
+      const data = await getDailyMenuRecommendation(selectedDate, token);
+      setMenu(data);
+    } catch {
+      setMenu(null);
+    } finally {
+      setLoading(false);
     }
-  };
-  const handleDeleteMeal = async (meal: Meal) => {
-    if (!token || !menu) return;
-    console.log("dât trong DELETE:", meal.dailyMenuId, meal.id);
-    try {
-      const updated = await deleteRecipeFromMenu(
-        {
-          dailyMenuId: meal.dailyMenuId,
-          recipeItemId: meal.id,
-        },
-        token
-      );
+  }, [token, selectedDate]);
 
-      setMenu(updated);
-    } catch (err) {
-      console.error('delete error', err);
-    }
-  };
-  // Trong MealRecommendationScreen.tsx
+  const handleToggleCheck = useCallback(
+    async (meal: Meal) => {
+      if (!token || !menu) return;
 
-const handleAddRecipeToMenu = async (params: any) => {
-  if (!token) return;
+      try {
+        const updated = await updateRecipeInMenu(
+          {
+            date: selectedDate,
+            dailyMenuId: meal.dailyMenuId,
+            recipeItemId: meal.id,
+            checked: !meal.isChecked,
+          },
+          token,
+        );
 
-  try {
-    // 1. Gọi API qua service
-    await addRecipeToMenu(params, token);
-
-    // 2. Refresh lại dữ liệu màn hình chính để thấy món mới
-    await fetchDay(selectedDate);
-
-    // 3. Đóng Modal
-    setShowSearch(false);
-    
-    // Có thể thêm thông báo thành công ở đây (Toast)
-  } catch (error) {
-    console.error("Lỗi khi thêm món:", error);
-    // Alert.alert("Lỗi", "Không thể thêm món ăn vào thực đơn");
-  }
-};
-  const isEmpty = Object.values(groupedMeals).every(
-    (items) => items.length === 0
+        setMenu(updated); // cập nhật lại UI
+      } catch (err) {
+        console.error('toggle check error', err);
+      }
+    },
+    [token, menu, selectedDate],
   );
 
-  return (
-    <ScreenContainer>
-      <Text style={styles.title}>Thực đơn hôm nay</Text>
-      <Text style={styles.subtitle}>
-        {new Date(selectedDate).toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'numeric' })}
-      </Text>
+  const handleDeleteMeal = useCallback(
+    async (meal: Meal) => {
+      if (!token || !menu) return;
+      try {
+        const updated = await deleteRecipeFromMenu(
+          {
+            dailyMenuId: meal.dailyMenuId,
+            recipeItemId: meal.id,
+          },
+          token,
+        );
 
+        setMenu(updated);
+      } catch (err) {
+        console.error('delete error', err);
+      }
+    },
+    [token, menu],
+  );
+
+  const handleAddRecipeToMenu = useCallback(
+    async (params: any) => {
+      if (!token) return;
+
+      try {
+        // 1. Gọi API qua service
+        await addRecipeToMenu(params, token);
+
+        // 2. Refresh lại dữ liệu màn hình chính để thấy món mới
+        await fetchDay(selectedDate);
+
+        // 3. Đóng Modal
+        setShowSearch(false);
+      } catch (error) {
+        console.error('Lỗi khi thêm món:', error);
+      }
+    },
+    [token, fetchDay, selectedDate],
+  );
+
+  const openSearch = useCallback(() => setShowSearch(true), []);
+  const closeSearch = useCallback(() => setShowSearch(false), []);
+  const handleSearchSuccess = useCallback(() => {
+    fetchDay(selectedDate);
+  }, [fetchDay, selectedDate]);
+
+  const isEmpty = Object.values(groupedMeals).every((items) => items.length === 0);
+
+  const dateLabel = new Date(selectedDate).toLocaleDateString('vi-VN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'numeric',
+  });
+
+  return (
+    <ScreenContainer
+      header={<ScreenHeader title="Thực đơn" subtitle={dateLabel} />}
+      onRefresh={onRefresh}
+    >
       {/* WEEK STRIP */}
       <View style={styles.weekRow}>
-        {weekData.map((d) => {
-          const isSelected = d.dateStr === selectedDate;
-
-          return (
-            <TouchableOpacity
-              key={d.dateStr}
-              style={[
-                styles.dayItem,
-                isSelected && styles.dayItemActive,
-              ]}
-              onPress={() => setSelectedDate(d.dateStr)}
-            >
-              <Text style={[styles.dayLabel, isSelected && styles.dayTextActive]}>
-                {d.label}
-              </Text>
-              <Text style={[styles.dayNumber, isSelected && styles.dayTextActive]}>
-                {d.day}
-              </Text>
-
-              {d.hasData && <View style={styles.dot} />}
-            </TouchableOpacity>
-          );
-        })}
+        {weekData.map((d) => (
+          <DayPill
+            key={d.dateStr}
+            item={d}
+            selected={d.dateStr === selectedDate}
+            onPress={setSelectedDate}
+          />
+        ))}
       </View>
 
       {/* NUTRITION */}
       {menu && (
         <View style={styles.nutritionCard}>
-          <Text style={styles.nutritionTitle}>Dinh dưỡng hôm nay</Text>
-
-          <Text style={styles.kcal}>
-            {Math.round((menu.totalNutrition?.calories || 0))} kcal
-          </Text>
+          <View style={styles.kcalRow}>
+            <View style={styles.kcalIcon}>
+              <Ionicons name="flame" size={20} color={METRIC_COLORS.calories} />
+            </View>
+            <View style={styles.flexShrink}>
+              <Text style={styles.nutritionTitle} numberOfLines={1}>
+                Dinh dưỡng trong ngày
+              </Text>
+              <Text style={styles.kcal} numberOfLines={1}>
+                {Math.round(menu.totalNutrition?.calories || 0)}
+                <Text style={styles.kcalUnit}> kcal</Text>
+              </Text>
+            </View>
+          </View>
 
           <View style={styles.macros}>
-            <Text>Đạm: {(menu.totalNutrition?.protein || 0).toFixed(1)}g</Text>
-            <Text>Carbs: {(menu.totalNutrition?.carbs || 0).toFixed(1)}g</Text>
-            <Text>Béo: {(menu.totalNutrition?.fat || 0).toFixed(1)}g</Text>
+            <NutritionItem
+              label="Đạm"
+              value={menu.totalNutrition?.protein || 0}
+              color={METRIC_COLORS.protein}
+            />
+            <NutritionItem
+              label="Tinh bột"
+              value={menu.totalNutrition?.carbs || 0}
+              color={METRIC_COLORS.carbs}
+            />
+            <NutritionItem
+              label="Chất béo"
+              value={menu.totalNutrition?.fat || 0}
+              color={METRIC_COLORS.fat}
+            />
           </View>
         </View>
       )}
@@ -289,361 +310,241 @@ const handleAddRecipeToMenu = async (params: any) => {
       {/* ── SEARCH BAR CỐ ĐỊNH ── */}
       <TouchableOpacity
         style={styles.searchBarStatic}
-        onPress={() => setShowSearch(true)}
+        onPress={openSearch}
         activeOpacity={0.7}
+        accessibilityRole="search"
       >
         <Ionicons name="search-outline" size={18} color={COLORS.textSecondary} />
-        <Text style={styles.searchBarPlaceholder}>Tìm và thêm món ăn...</Text>
+        <Text style={styles.searchBarPlaceholder} numberOfLines={1}>
+          Tìm và thêm món ăn...
+        </Text>
+        <Ionicons name="add-circle" size={22} color={COLORS.primary} />
       </TouchableOpacity>
 
-
-      <RefreshableScrollView
-  onRefreshData={onRefresh}
-  showsVerticalScrollIndicator={false}
->
-        {loading ? (
-  <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />
-) : isEmpty ? (
-  renderEmpty()
-) : (
-  Object.entries(groupedMeals).map(([key, items]) => {
-    if (items.length === 0) return null;
-    return (
-      <View key={key} style={styles.mealSection}>
-        <Text style={styles.mealSectionTitle}>
-          {MEAL_LABELS[key as keyof typeof MEAL_LABELS]}
-        </Text>
-        {items.map((meal) => (
-          <MealCard
-            key={meal.id}
-            meal={meal}
-            onToggleCheck={handleToggleCheck}
-            onDelete={handleDeleteMeal}
+      {loading ? (
+        <LoadingState message="Đang tải thực đơn..." />
+      ) : isEmpty ? (
+        <View style={styles.emptyWrap}>
+          <EmptyState
+            icon="restaurant-outline"
+            title="Chưa có thực đơn cho ngày này"
+            message="Tìm và thêm món ở ô phía trên, hoặc để hệ thống gợi ý thực đơn cho bạn."
           />
-        ))}
-      </View>
-    );
-  })
-)}
-      </RefreshableScrollView>
+          <Button title="Lấy gợi ý thực đơn" icon="bulb-outline" onPress={handleRecommend} />
+        </View>
+      ) : (
+        Object.entries(groupedMeals).map(([key, items]) => {
+          if (items.length === 0) return null;
+          const k = key as keyof typeof MEAL_LABELS;
+          return (
+            <View key={key}>
+              <SectionHeader title={`${MEAL_LABELS[k]} (${items.length})`} icon={MEAL_ICONS[k]} />
+              {items.map((meal) => (
+                <MealCard
+                  key={meal.id}
+                  meal={meal}
+                  onToggleCheck={handleToggleCheck}
+                  onDelete={handleDeleteMeal}
+                />
+              ))}
+            </View>
+          );
+        })
+      )}
 
       {/* Modal search */}
       <RecipeSearchSheet
         visible={showSearch}
         date={selectedDate}
         token={token!}
-        dailyMenuId={menu?._id}         // lấy từ menu hiện tại nếu đã có
-        onClose={() => setShowSearch(false)}
-        onSuccess={() => fetchDay(selectedDate)}
+        dailyMenuId={menu?._id} // lấy từ menu hiện tại nếu đã có
+        onClose={closeSearch}
+        onSuccess={handleSearchSuccess}
         onAddRecipe={handleAddRecipeToMenu}
       />
-
     </ScreenContainer>
   );
 }
 
-function NutritionItem({ label, value, unit, color }: { label: string; value: number; unit: string; color: string }) {
+const DayPill = memo(function DayPill({
+  item,
+  selected,
+  onPress,
+}: {
+  item: WeekDay;
+  selected: boolean;
+  onPress: (dateStr: string) => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.dayItem, selected && styles.dayItemActive]}
+      onPress={() => onPress(item.dateStr)}
+      activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+    >
+      <Text style={[styles.dayLabel, selected && styles.dayTextActive]} numberOfLines={1}>
+        {item.label}
+      </Text>
+      <Text style={[styles.dayNumber, selected && styles.dayTextActive]} numberOfLines={1}>
+        {item.day}
+      </Text>
+      <View
+        style={[
+          styles.dot,
+          !item.hasData && styles.dotHidden,
+          selected && styles.dotActive,
+        ]}
+      />
+    </TouchableOpacity>
+  );
+});
+
+function NutritionItem({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <View style={styles.nutritionItem}>
       <View style={[styles.nutritionDot, { backgroundColor: color }]} />
-      <Text style={styles.nutritionValue}>{Math.round(value)}</Text>
-      <Text style={styles.nutritionUnit}>{unit}</Text>
-      <Text style={styles.nutritionLabel}>{label}</Text>
+      <View style={styles.flexShrink}>
+        <Text style={styles.nutritionValue} numberOfLines={1}>
+          {value.toFixed(1)}g
+        </Text>
+        <Text style={styles.nutritionLabel} numberOfLines={1}>
+          {label}
+        </Text>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  searchBarStatic: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 12,
-    marginBottom: SPACING.md,
-  },
-  searchBarPlaceholder: {
-    color: COLORS.textSecondary,
-    fontSize: 15,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    marginVertical: SPACING.md,
-    width: '80%',
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
-  dividerText: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-  },
-  primaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: COLORS.primary,
-    padding: 14,
-    borderRadius: 12,
-    marginTop: 16,
-  },
-
-  secondaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    padding: 14,
-    borderRadius: 12,
-    marginTop: 10,
-  },
-
-  primaryText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-
-  secondaryText: {
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
-
-  mealSection: {
-    marginBottom: SPACING.lg,
-  },
-
-  mealSectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.sm,
-    textTransform: 'uppercase',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: SPACING.xs,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.lg,
-  },
-  dateSelector: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    marginBottom: SPACING.lg,
-  },
-  toggleButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-    paddingVertical: SPACING.md,
-    borderRadius: 12,
-    backgroundColor: COLORS.surface,
-    borderWidth: 2,
-    borderColor: COLORS.border,
-  },
-  toggleButtonActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  toggleText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  toggleTextActive: {
-    color: '#FFF',
-  },
-  nutritionSummary: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: SPACING.md,
-    marginBottom: SPACING.lg,
-  },
-  nutritionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.sm,
-  },
-  nutritionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  nutritionItem: {
-    alignItems: 'center',
-  },
-  nutritionDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginBottom: 4,
-  },
-  nutritionValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-  nutritionUnit: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-  },
-  nutritionLabel: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-  listContent: {
-    paddingBottom: SPACING.xl,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    marginTop: SPACING.md,
-    marginBottom: SPACING.lg,
-  },
-  getRecommendationButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    backgroundColor: COLORS.primary,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    borderRadius: 12,
-  },
-  getRecommendationText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  mealCard: {
-    marginBottom: SPACING.md,
-  },
-  mealHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: SPACING.sm,
-  },
-  mealInfo: {
-    flex: 1,
-  },
-  mealName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
-  servingTimeBadge: {
-    backgroundColor: COLORS.primary + '20',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginTop: 4,
-    alignSelf: 'flex-start',
-  },
-  servingTimeText: {
-    fontSize: 12,
-    color: COLORS.primary,
-    fontWeight: '500',
-  },
-  macros: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.md,
-  },
-  macroItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-  },
-  macroValue: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-  },
-  portionText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: SPACING.sm,
-  },
+  flexShrink: { flexShrink: 1, minWidth: 0 },
 
   weekRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: SPACING.lg,
+    gap: SPACING.xs + 2,
+    marginBottom: SPACING.md,
   },
-
   dayItem: {
+    flex: 1,
+    minWidth: 0,
     alignItems: 'center',
-    padding: 10,
-    borderRadius: 12,
+    paddingVertical: SPACING.sm + 2,
+    borderRadius: BORDER_RADIUS.md,
     backgroundColor: COLORS.surface,
+    ...SHADOWS.sm,
   },
-
   dayItemActive: {
     backgroundColor: COLORS.primary,
   },
-
   dayLabel: {
-    fontSize: 12,
+    ...TYPOGRAPHY.small,
     color: COLORS.textSecondary,
   },
-
   dayNumber: {
-    fontSize: 16,
-    fontWeight: '700',
+    ...TYPOGRAPHY.h3,
     color: COLORS.text,
+    marginTop: SPACING.xxs,
   },
-
   dayTextActive: {
-    color: '#fff',
+    color: COLORS.textInverse,
   },
-
   dot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: COLORS.primary,
-    marginTop: 4,
+    marginTop: SPACING.xs,
+  },
+  dotHidden: {
+    opacity: 0,
+  },
+  dotActive: {
+    backgroundColor: COLORS.textInverse,
   },
 
   nutritionCard: {
     backgroundColor: COLORS.surface,
     padding: SPACING.md,
-    borderRadius: 12,
-    marginBottom: SPACING.lg,
+    borderRadius: BORDER_RADIUS.lg,
+    marginBottom: SPACING.md,
+    gap: SPACING.md,
+    ...SHADOWS.md,
   },
-
+  kcalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm + 4,
+  },
+  kcalIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.accentSoft,
+  },
+  nutritionTitle: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+  },
   kcal: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: COLORS.primary,
+    ...TYPOGRAPHY.display,
+    color: COLORS.text,
+  },
+  kcalUnit: {
+    ...TYPOGRAPHY.bodyStrong,
+    color: COLORS.textSecondary,
+  },
+  macros: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+  },
+  nutritionItem: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.surfaceMuted,
+    borderRadius: BORDER_RADIUS.md,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.sm + 2,
+  },
+  nutritionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  nutritionValue: {
+    ...TYPOGRAPHY.bodyStrong,
+    color: COLORS.text,
+  },
+  nutritionLabel: {
+    ...TYPOGRAPHY.small,
+    color: COLORS.textSecondary,
   },
 
-  // macros: {
-  //   flexDirection: 'row',
-  //   justifyContent: 'space-between',
-  //   marginTop: 10,
-  // },
+  searchBarStatic: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    height: 48,
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.md,
+  },
+  searchBarPlaceholder: {
+    ...TYPOGRAPHY.body,
+    flex: 1,
+    minWidth: 0,
+    color: COLORS.textMuted,
+  },
+
+  emptyWrap: {
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingBottom: SPACING.lg,
+  },
 });

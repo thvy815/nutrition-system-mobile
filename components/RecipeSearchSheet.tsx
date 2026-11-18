@@ -1,17 +1,28 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
-  View, Text, TextInput, FlatList, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Modal, Image,
+  View,
+  Text,
+  TextInput,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Modal,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SPACING } from '../constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BORDER_RADIUS, COLORS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { searchRecipesByIngredient, type Recipe } from '../services';
+import { EmptyState, IconButton, LoadingState, Segmented } from './ui';
 
-const MEAL_TYPES = [
-  { key: 'breakfast', label: 'Sáng' },
-  { key: 'lunch', label: 'Trưa' },
-  { key: 'dinner', label: 'Tối' },
-  { key: 'snack', label: 'Phụ' },
+type MealTypeKey = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+
+const MEAL_TYPES: { value: MealTypeKey; label: string }[] = [
+  { value: 'breakfast', label: 'Sáng' },
+  { value: 'lunch', label: 'Trưa' },
+  { value: 'dinner', label: 'Tối' },
+  { value: 'snack', label: 'Phụ' },
 ];
 
 // Định nghĩa Interface để Trang chính có thể sử dụng (Export nó ra)
@@ -35,12 +46,19 @@ type Props = {
 };
 
 export function RecipeSearchSheet({
-  visible, date, token, dailyMenuId, onClose, onSuccess, onAddRecipe,
+  visible,
+  date,
+  token,
+  dailyMenuId,
+  onClose,
+  onSuccess,
+  onAddRecipe,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [loading, setLoading] = useState(false);
-  const [mealType, setMealType] = useState('lunch');
+  const [mealType, setMealType] = useState<MealTypeKey>('lunch');
   const [addingId, setAddingId] = useState<string | null>(null);
 
   // 1. Search Logic (Debounce)
@@ -57,7 +75,7 @@ export function RecipeSearchSheet({
           keyword: query,
           token,
           page: 1,
-          limit: 20
+          limit: 20,
         });
         setRecipes(result.recipes);
       } catch (err) {
@@ -82,61 +100,42 @@ export function RecipeSearchSheet({
   }, [visible]);
 
   // 3. Hàm xử lý khi bấm nút "Thêm"
-  const handleAdd = async (recipe: Recipe) => {
-    if (addingId) return; // Tránh bấm liên tục
+  const handleAdd = useCallback(
+    async (recipe: Recipe) => {
+      if (addingId) return; // Tránh bấm liên tục
 
-    setAddingId(recipe._id);
-    try {
-      // Gửi toàn bộ dữ liệu trang chính cần
-      await onAddRecipe({
-        date,
-        dailyMenuId,
-        recipeId: recipe._id,
-        scale: 1,
-        servingTime: mealType,
-        status: 'manual',
-      });
+      setAddingId(recipe._id);
+      try {
+        await onAddRecipe({
+          date,
+          dailyMenuId,
+          recipeId: recipe._id,
+          scale: 1,
+          servingTime: mealType,
+          status: 'manual',
+        });
 
-      // Nếu có callback thành công (như hiện thông báo hoặc refresh)
-      onSuccess?.();
-      onClose();
-    } catch (err) {
-      console.error('Add recipe error:', err);
-      // Bạn có thể thêm Alert ở đây nếu cần thông báo lỗi cho user
-    } finally {
-      setAddingId(null);
-    }
-  };
+        onSuccess?.();
+        onClose();
+      } catch (err) {
+        console.error('Add recipe error:', err);
+      } finally {
+        setAddingId(null);
+      }
+    },
+    [addingId, onAddRecipe, date, dailyMenuId, mealType, onSuccess, onClose],
+  );
 
-  const renderRecipe = ({ item }: { item: Recipe }) => (
-    <View style={styles.recipeItem}>
-      {item.imageUrl ? (
-        <Image source={{ uri: item.imageUrl }} style={styles.thumbnail} />
-      ) : (
-        <View style={[styles.thumbnail, styles.thumbnailFallback]}>
-          <Ionicons name="restaurant-outline" size={20} color={COLORS.textSecondary} />
-        </View>
-      )}
-
-      <View style={styles.recipeInfo}>
-        <Text style={styles.recipeName} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.recipeSub}>
-          {item.category || 'Món ăn'}
-        </Text>
-      </View>
-
-      <TouchableOpacity
-        style={[styles.addBtn, addingId === item._id && styles.addBtnDisabled]}
-        onPress={() => handleAdd(item)}
+  const renderRecipe = useCallback(
+    ({ item }: { item: Recipe }) => (
+      <RecipeRow
+        recipe={item}
+        adding={addingId === item._id}
         disabled={!!addingId}
-      >
-        {addingId === item._id ? (
-          <ActivityIndicator size="small" color="#fff" />
-        ) : (
-          <Ionicons name="add" size={22} color="#fff" />
-        )}
-      </TouchableOpacity>
-    </View>
+        onAdd={handleAdd}
+      />
+    ),
+    [addingId, handleAdd],
   );
 
   return (
@@ -149,26 +148,29 @@ export function RecipeSearchSheet({
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Thêm món ăn</Text>
-          <TouchableOpacity onPress={onClose}>
-            <Ionicons name="close" size={24} color={COLORS.text} />
-          </TouchableOpacity>
+          <View style={styles.headerText}>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              Thêm món ăn
+            </Text>
+            <Text style={styles.headerSubtitle} numberOfLines={1}>
+              Chọn bữa rồi tìm món để thêm vào thực đơn
+            </Text>
+          </View>
+          <IconButton
+            icon="close"
+            onPress={onClose}
+            background={COLORS.surfaceMuted}
+            accessibilityLabel="Đóng"
+          />
         </View>
 
-        {/* Bữa ăn (Tabs) */}
-        <View style={styles.tabs}>
-          {MEAL_TYPES.map((t) => (
-            <TouchableOpacity
-              key={t.key}
-              style={[styles.tab, mealType === t.key && styles.tabActive]}
-              onPress={() => setMealType(t.key)}
-            >
-              <Text style={[styles.tabText, mealType === t.key && styles.tabTextActive]}>
-                {t.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* Bữa ăn */}
+        <Segmented
+          options={MEAL_TYPES}
+          value={mealType}
+          onChange={setMealType}
+          style={styles.segmented}
+        />
 
         {/* Search Bar */}
         <View style={styles.searchBox}>
@@ -176,38 +178,51 @@ export function RecipeSearchSheet({
           <TextInput
             style={styles.searchInput}
             placeholder="Tìm theo tên món hoặc nguyên liệu..."
-            placeholderTextColor={COLORS.textSecondary}
+            placeholderTextColor={COLORS.textMuted}
             value={query}
             onChangeText={setQuery}
             autoFocus
+            returnKeyType="search"
           />
           {query.length > 0 && (
-            <TouchableOpacity onPress={() => setQuery('')}>
-              <Ionicons name="close-circle" size={18} color={COLORS.textSecondary} />
+            <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}>
+              <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
             </TouchableOpacity>
           )}
         </View>
 
         {/* List kết quả */}
         {loading ? (
-          <ActivityIndicator style={{ marginTop: 40 }} color={COLORS.primary} size="large" />
+          <LoadingState message="Đang tìm món ăn..." />
         ) : (
           <FlatList
             data={recipes}
             keyExtractor={(item) => item._id}
-            contentContainerStyle={styles.list}
-            keyboardShouldPersistTaps="handled"
-            ListEmptyComponent={
-              <View style={styles.emptyWrap}>
-                <Ionicons name="search-outline" size={40} color={COLORS.textSecondary} />
-                <Text style={styles.emptyText}>
-                  {query.trim()
-                    ? `Không tìm thấy "${query}"`
-                    : 'Nhập tên món ăn để thêm vào thực đơn'}
-                </Text>
-              </View>
-            }
             renderItem={renderRecipe}
+            extraData={addingId}
+            style={styles.flex}
+            contentContainerStyle={[
+              styles.list,
+              { paddingBottom: insets.bottom + SPACING.lg },
+            ]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              query.trim() ? (
+                <EmptyState
+                  icon="search-outline"
+                  title="Không tìm thấy món phù hợp"
+                  message={`Không có kết quả cho "${query.trim()}"`}
+                />
+              ) : (
+                <EmptyState
+                  icon="restaurant-outline"
+                  title="Tìm món ăn"
+                  message="Nhập tên món ăn hoặc nguyên liệu để thêm vào thực đơn"
+                />
+              )
+            }
           />
         )}
       </View>
@@ -215,36 +230,125 @@ export function RecipeSearchSheet({
   );
 }
 
+const RecipeRow = memo(function RecipeRow({
+  recipe,
+  adding,
+  disabled,
+  onAdd,
+}: {
+  recipe: Recipe;
+  adding: boolean;
+  disabled: boolean;
+  onAdd: (recipe: Recipe) => void;
+}) {
+  return (
+    <View style={styles.recipeItem}>
+      {recipe.imageUrl ? (
+        <Image source={{ uri: recipe.imageUrl }} style={styles.thumbnail} />
+      ) : (
+        <View style={[styles.thumbnail, styles.thumbnailFallback]}>
+          <Ionicons name="restaurant-outline" size={20} color={COLORS.textMuted} />
+        </View>
+      )}
+
+      <View style={styles.recipeInfo}>
+        <Text style={styles.recipeName} numberOfLines={2}>
+          {recipe.name}
+        </Text>
+        <Text style={styles.recipeSub} numberOfLines={1}>
+          {recipe.category || 'Món ăn'}
+        </Text>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.addBtn, disabled && !adding && styles.addBtnDisabled]}
+        onPress={() => onAdd(recipe)}
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={`Thêm ${recipe.name}`}
+      >
+        {adding ? (
+          <ActivityIndicator size="small" color={COLORS.textInverse} />
+        ) : (
+          <Ionicons name="add" size={22} color={COLORS.textInverse} />
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+});
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', paddingTop: SPACING.md },
+  flex: { flex: 1 },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    paddingTop: SPACING.md,
+  },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.md,
   },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: COLORS.text },
-  tabs: { flexDirection: 'row', gap: 8, paddingHorizontal: SPACING.lg, marginBottom: 12 },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8, backgroundColor: COLORS.surface },
-  tabActive: { backgroundColor: COLORS.primary },
-  tabText: { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary },
-  tabTextActive: { color: '#fff' },
+  headerText: { flex: 1, minWidth: 0 },
+  headerTitle: { ...TYPOGRAPHY.h2, color: COLORS.text },
+  headerSubtitle: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary, marginTop: SPACING.xxs },
+  segmented: {
+    marginHorizontal: SPACING.md,
+    marginBottom: SPACING.sm + 4,
+  },
   searchBox: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginHorizontal: SPACING.lg, marginBottom: 12,
-    backgroundColor: COLORS.surface, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginHorizontal: SPACING.md,
+    marginBottom: SPACING.sm + 4,
+    height: 48,
+    paddingHorizontal: SPACING.sm + 4,
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  searchInput: { flex: 1, fontSize: 15, color: COLORS.text },
-  list: { paddingHorizontal: SPACING.lg, paddingBottom: 40 },
-  recipeItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  thumbnail: { width: 50, height: 50, borderRadius: 8 },
-  thumbnailFallback: { backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center' },
-  recipeInfo: { flex: 1 },
-  recipeName: { fontSize: 15, fontWeight: '600', color: COLORS.text },
-  recipeSub: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
-  addBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    height: '100%',
+    fontSize: TYPOGRAPHY.body.fontSize,
+    color: COLORS.text,
+    paddingVertical: 0,
+  },
+  list: {
+    paddingHorizontal: SPACING.md,
+    gap: SPACING.sm,
+  },
+  recipeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm + 4,
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.sm + 4,
+    ...SHADOWS.sm,
+  },
+  thumbnail: {
+    width: 52,
+    height: 52,
+    borderRadius: BORDER_RADIUS.sm,
+    backgroundColor: COLORS.surfaceMuted,
+  },
+  thumbnailFallback: { alignItems: 'center', justifyContent: 'center' },
+  recipeInfo: { flex: 1, minWidth: 0 },
+  recipeName: { ...TYPOGRAPHY.bodyStrong, color: COLORS.text, flexShrink: 1 },
+  recipeSub: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary, marginTop: SPACING.xxs },
+  addBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   addBtnDisabled: { opacity: 0.5 },
-  emptyWrap: { alignItems: 'center', marginTop: 60, gap: 12 },
-  emptyText: { textAlign: 'center', color: COLORS.textSecondary, fontSize: 14 },
 });

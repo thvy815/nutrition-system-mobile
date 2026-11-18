@@ -1,273 +1,262 @@
-import React, { useState, useEffect } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   ScrollView,
   Text,
   StyleSheet,
-  TouchableOpacity,
   Image,
-  ActivityIndicator,
-  Dimensions,
+  LayoutChangeEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ScreenContainer } from '../components/ScreenContainer';
-import { COLORS, BORDER_RADIUS } from '../constants/theme';
+import {
+  Badge,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  ScreenContainer,
+  ScreenHeader,
+  Segmented,
+} from '../components';
+import { BORDER_RADIUS, COLORS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { exerciseService } from '../services/exercise.service';
 
-const { width } = Dimensions.get('window');
+type DetailTab = 'video' | 'how';
+
+const TAB_OPTIONS: { value: DetailTab; label: string }[] = [
+  { value: 'video', label: 'Video' },
+  { value: 'how', label: 'Hướng dẫn' },
+];
+
+/** Carousel ảnh: chiều rộng trang = chiều rộng thực của khung (không tràn padding). */
+const ImageCarousel = memo(function ImageCarousel({ images }: { images: string[] }) {
+  const [pageWidth, setPageWidth] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const onLayout = useCallback((e: LayoutChangeEvent) => {
+    setPageWidth(e.nativeEvent.layout.width);
+  }, []);
+
+  const onMomentumEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (!pageWidth) return;
+      setCurrentIndex(Math.round(e.nativeEvent.contentOffset.x / pageWidth));
+    },
+    [pageWidth]
+  );
+
+  if (images.length === 0) {
+    return (
+      <View style={[styles.imageCard, styles.emptyImage]}>
+        <MaterialCommunityIcons name="image-off-outline" size={44} color={COLORS.textMuted} />
+        <Text style={styles.emptyText}>Không có hình ảnh</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.imageCard} onLayout={onLayout}>
+      {pageWidth > 0 ? (
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          decelerationRate="fast"
+          disableIntervalMomentum
+          onMomentumScrollEnd={onMomentumEnd}
+        >
+          {images.map((img, index) => (
+            <View key={index} style={{ width: pageWidth }}>
+              <Image source={{ uri: img }} style={styles.image} resizeMode="contain" />
+            </View>
+          ))}
+        </ScrollView>
+      ) : (
+        <View style={styles.image} />
+      )}
+      {images.length > 1 ? (
+        <View style={styles.dots}>
+          {images.map((_, i) => (
+            <View key={i} style={[styles.dot, i === currentIndex && styles.dotActive]} />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+});
 
 export const ExerciseDetailScreen = ({ route, navigation }: any) => {
- 
   const exerciseId = route?.params?.exerciseId;
 
   const [exercise, setExercise] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [imageError, setImageError] = useState(false);
-  const [tab, setTab] = useState<'video' | 'how'>('how');
+  const [tab, setTab] = useState<DetailTab>('how');
 
-  const [currentIndex, setCurrentIndex] = useState(0);
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
+      setLoading(true);
       const data = await exerciseService.getExerciseDetail(exerciseId);
       setExercise(data);
     } catch (e) {
-      console.log(e);
+      if (__DEV__) console.error(e);
     } finally {
       setLoading(false);
     }
-  };
+  }, [exerciseId]);
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleBack = useCallback(() => navigation.goBack(), [navigation]);
+
+  const description = useMemo(
+    () => (exercise?.description ? String(exercise.description).replace(/<[^>]+>/g, '').trim() : ''),
+    [exercise?.description]
+  );
 
   if (loading) {
     return (
-      <ScreenContainer>
-        <ActivityIndicator size="small" color={COLORS.primary} />
+      <ScreenContainer header={<ScreenHeader title="Chi tiết bài tập" onBack={handleBack} />}>
+        <LoadingState />
       </ScreenContainer>
     );
   }
 
   if (!exercise) {
     return (
-      <ScreenContainer>
-        <Text>Không có dữ liệu</Text>
+      <ScreenContainer header={<ScreenHeader title="Chi tiết bài tập" onBack={handleBack} />}>
+        <ErrorState message="Không có dữ liệu" onRetry={load} />
       </ScreenContainer>
     );
   }
 
-  const images = exercise?.images ?? [];
+  const images: string[] = exercise?.images ?? [];
 
   return (
-    <ScreenContainer>
-      <ScrollView showsVerticalScrollIndicator={false}>
+    <ScreenContainer header={<ScreenHeader title={exercise.name} onBack={handleBack} />}>
+      <ImageCarousel images={images} />
 
-        {/* BACK + TITLE */}
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={{ fontSize: 16 }}>← Quay lại</Text>
-        </TouchableOpacity>
+      <Segmented options={TAB_OPTIONS} value={tab} onChange={setTab} style={styles.tabs} />
 
-        <Text style={styles.title}>{exercise.name}</Text>
+      {tab === 'how' ? (
+        <>
+          {/* INSTRUCTION */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Cách thực hiện</Text>
+            <Text style={styles.text}>{description || 'Chưa có hướng dẫn'}</Text>
+          </View>
 
-        {/* IMAGE */}
-        <View style={styles.imageWrapper}>
-          {images.length > 0 ? (
-            <ScrollView
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              decelerationRate="fast"
-              disableIntervalMomentum
-              contentContainerStyle={{ paddingHorizontal: 0 }}
-              onScroll={(e) => {
-                const index = Math.round(
-                  e.nativeEvent.contentOffset.x / width
-                );
-                setCurrentIndex(index);
-              }}
-              scrollEventThrottle={16}
-            >
-              {images.map((img: string, index: number) => (
-                <View key={index} style={{ width, justifyContent: 'center', alignItems: 'center' }}>
-                  <Image source={{ uri: img }} style={styles.image} />
-                </View>
-              ))}
-            </ScrollView>
-          ) : (
-            <View style={styles.emptyImage}>
-              <MaterialCommunityIcons
-                name="image-off-outline"
-                size={50}
-                color="#999"
-              />
-              <Text style={styles.emptyText}>Không có hình ảnh</Text>
-            </View>
-          )}
-        </View>
-
-        {/* TAB */}
-        <View style={styles.tabContainer}>
-          <TouchableOpacity onPress={() => setTab('video')}>
-            <Text style={[styles.tab, tab === 'video' && styles.tabActive]}>
-              Video
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => setTab('how')}>
-            <Text style={[styles.tab, tab === 'how' && styles.tabActive]}>
-              Hướng dẫn
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* CONTENT */}
-        {tab === 'how' ? (
-          <>
-            {/* INSTRUCTION */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Cách thực hiện</Text>
-              <Text style={styles.text}>
-                {exercise.description?.replace(/<[^>]+>/g, '')}
-              </Text>
-            </View>
-
-            {/* MUSCLES */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Nhóm cơ tác động</Text>
-              {exercise.muscles?.map((m: any) => (
-                <Text key={m.id} style={styles.tag}>
-                  • {m.name_en || m.name}
-                </Text>
-              ))}
-            </View>
-
-            {/* EQUIPMENT */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Dụng cụ cần thiết</Text>
-              {exercise.equipment?.length ? (
-                exercise.equipment.map((e: any) => (
-                  <Text key={e.id} style={styles.tag}>
-                    • {e.name}
-                  </Text>
-                ))
-              ) : (
-                <Text>Không cần dụng cụ</Text>
-              )}
-            </View>
-          </>
-          
-        ) : (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Video</Text>
-
-            {exercise.videos?.length ? (
-              <Text>Video player ở đây</Text>
-            ) : (
-              <View style={styles.placeholder}>
-                <MaterialCommunityIcons name="video-off" size={40} />
-                <Text>Không có video</Text>
+          {/* MUSCLES */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Nhóm cơ tác động</Text>
+            {exercise.muscles?.length ? (
+              <View style={styles.tagRow}>
+                {exercise.muscles.map((m: any) => (
+                  <Badge key={m.id} label={m.name_en || m.name} tone="success" />
+                ))}
               </View>
+            ) : (
+              <Text style={styles.mutedText}>—</Text>
             )}
           </View>
-        )}
 
-        
-
-      </ScrollView>
+          {/* EQUIPMENT */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Dụng cụ cần thiết</Text>
+            {exercise.equipment?.length ? (
+              <View style={styles.tagRow}>
+                {exercise.equipment.map((e: any) => (
+                  <Badge key={e.id} label={e.name} tone="info" icon="barbell-outline" />
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.mutedText}>Không cần dụng cụ</Text>
+            )}
+          </View>
+        </>
+      ) : (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Video</Text>
+          {exercise.videos?.length ? (
+            <Text style={styles.text}>Video player ở đây</Text>
+          ) : (
+            <EmptyState icon="videocam-off-outline" title="Không có video" />
+          )}
+        </View>
+      )}
     </ScreenContainer>
   );
 };
 
 const styles = StyleSheet.create({
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    marginVertical: 10,
+  imageCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    overflow: 'hidden',
+    ...SHADOWS.sm,
   },
-  imageWrapper: {
-    width,
-    height: 280,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-  },
-
   image: {
-    width: '92%',
-    height: 260,
-    resizeMode: 'contain',
-  },
-
-  emptyImage: {
     width: '100%',
-    height: 280,
+    aspectRatio: 4 / 3,
+  },
+  emptyImage: {
+    aspectRatio: 4 / 3,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: SPACING.sm,
   },
-
   emptyText: {
-    marginTop: 10,
-    color: '#999',
-    fontSize: 14,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    marginTop: 15,
-    gap: 20,
-  },
-  tab: {
-    fontSize: 16,
-    color: '#999',
-  },
-  tabActive: {
-    color: COLORS.primary,
-    fontWeight: '700',
-    borderBottomWidth: 2,
-    borderBottomColor: COLORS.primary,
-  },
-  section: {
-    marginTop: 20,
-    padding: 10,
-    backgroundColor: '#fff',
-    borderRadius: BORDER_RADIUS.md,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  text: {
-    color: '#444',
-    lineHeight: 20,
-  },
-  tag: {
-    marginTop: 4,
-    color: '#555',
-  },
-  placeholder: {
-    height: 120,
-    justifyContent: 'center',
-    alignItems: 'center',
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
   },
   dots: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 8,
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm,
   },
-
   dot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#ccc',
-    marginHorizontal: 4,
+    backgroundColor: COLORS.border,
   },
-
   dotActive: {
     backgroundColor: COLORS.primary,
     width: 8,
     height: 8,
+    borderRadius: 4,
+  },
+  tabs: {
+    marginTop: SPACING.md,
+  },
+  card: {
+    marginTop: SPACING.md,
+    padding: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    gap: SPACING.sm,
+    ...SHADOWS.sm,
+  },
+  cardTitle: {
+    ...TYPOGRAPHY.h3,
+    color: COLORS.text,
+  },
+  text: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.textSecondary,
+  },
+  mutedText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+  },
+  tagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
   },
 });

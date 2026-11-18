@@ -1,17 +1,31 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Card, ScreenContainer } from '../components';
+import { useNavigation } from '@react-navigation/native';
+import {
+  Badge,
+  Button,
+  Card,
+  Chip,
+  ErrorState,
+  LoadingState,
+  ScreenContainer,
+  ScreenHeader,
+  SectionHeader,
+  StatTile,
+} from '../components';
 import { useAuth } from '../contexts/AuthContext';
-import { COLORS, SPACING } from '../constants/theme';
+import { BORDER_RADIUS, COLORS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { fetchCurrentUser } from '../services/auth';
 import type { ApiError } from '../services/api';
 import { FitnessLevel, HealthGoal, UserProfile } from '../types/user';
 
-const GOAL_OPTIONS: { value: HealthGoal; label: string }[] = [
-  { value: 'lose_weight', label: 'Giảm cân' },
-  { value: 'gain_weight', label: 'Tăng cân' },
-  { value: 'maintain_weight', label: 'Duy trì' },
+type IconName = keyof typeof Ionicons.glyphMap;
+
+const GOAL_OPTIONS: { value: HealthGoal; label: string; icon: IconName }[] = [
+  { value: 'lose_weight', label: 'Giảm cân', icon: 'trending-down' },
+  { value: 'gain_weight', label: 'Tăng cân', icon: 'trending-up' },
+  { value: 'maintain_weight', label: 'Duy trì', icon: 'remove' },
 ];
 
 const FITNESS_OPTIONS: { value: FitnessLevel; label: string }[] = [
@@ -22,30 +36,42 @@ const FITNESS_OPTIONS: { value: FitnessLevel; label: string }[] = [
   { value: 'athlete', label: 'Vận động viên' },
 ];
 
+const GENDER_OPTIONS: { value: UserProfile['gender']; label: string }[] = [
+  { value: 'male', label: 'Nam' },
+  { value: 'female', label: 'Nữ' },
+  { value: 'other', label: 'Khác' },
+];
+
+function getBmiColor(bmi: number) {
+  if (bmi < 18.5) return COLORS.warning;
+  if (bmi < 25) return COLORS.success;
+  return COLORS.error;
+}
+
 export function UserProfileScreen() {
+  const navigation = useNavigation<any>();
   const { token, logout } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [dietaryInput, setDietaryInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function handleLogoutConfirm() {
-    Alert.alert(
-      'Đăng xuất',
-      'Bạn có chắc chắn muốn đăng xuất không?',
-      [
-        {
-          text: 'Hủy',
-          style: 'cancel',
-        },
-        {
-          text: 'Đăng xuất',
-          style: 'destructive',
-          onPress: logout,
-        },
-      ]
-    );
-  }
+  const handleBack = useCallback(() => navigation.goBack(), [navigation]);
+  const openHealth = useCallback(() => navigation.navigate('Health'), [navigation]);
+
+  const handleLogoutConfirm = useCallback(() => {
+    Alert.alert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất không?', [
+      {
+        text: 'Hủy',
+        style: 'cancel',
+      },
+      {
+        text: 'Đăng xuất',
+        style: 'destructive',
+        onPress: logout,
+      },
+    ]);
+  }, [logout]);
 
   useEffect(() => {
     if (!token) return;
@@ -97,157 +123,116 @@ export function UserProfileScreen() {
     };
   }, [token]);
 
-  const updateProfile = <K extends keyof UserProfile>(
-    key: K,
-    value: UserProfile[K]
-  ) => {
-    setProfile((prev) => (prev ? { ...prev, [key]: value } : prev));
-  };
+  const updateProfile = useCallback(
+    <K extends keyof UserProfile>(key: K, value: UserProfile[K]) => {
+      setProfile((prev) => (prev ? { ...prev, [key]: value } : prev));
+    },
+    []
+  );
+
+  const handleDietaryChange = useCallback(
+    (v: string) => {
+      setDietaryInput(v);
+      updateProfile(
+        'dietaryRestrictions',
+        v.split(',').map((s) => s.trim()).filter(Boolean)
+      );
+    },
+    [updateProfile]
+  );
+
+  const height = profile?.height ?? 0;
+  const weight = profile?.weight ?? 0;
+  const bmiValue = useMemo(
+    () => (height > 0 ? weight / ((height / 100) ** 2) : 0),
+    [height, weight]
+  );
+
+  const header = <ScreenHeader title="Hồ sơ" subtitle="Quản lý thông tin sức khỏe của bạn" onBack={handleBack} />;
 
   if (!profile) {
     return (
-      <ScreenContainer>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <ScreenContainer header={header} withBottomInset>
+        {error && !loading ? <ErrorState message={error} /> : <LoadingState message="Đang tải hồ sơ..." />}
       </ScreenContainer>
     );
   }
 
-  const bmiValue =
-    profile.height > 0
-      ? profile.weight / ((profile.height / 100) ** 2)
-      : 0;
-
   const bmi = bmiValue.toFixed(1); // để hiển thị
 
-  const getBmiColor = (bmi: number) => {
-    if (bmi < 18.5) return COLORS.warning;
-    if (bmi < 25) return COLORS.success;
-    return COLORS.error;
-  };
-
   return (
-    <ScreenContainer>
-      <Text style={styles.title}>Hồ sơ</Text>
-      <Text style={styles.subtitle}>Quản lý thông tin sức khỏe của bạn</Text>
-
-      {loading && (
-        <View style={styles.loadingRow}>
-          <ActivityIndicator size="small" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Đang tải hồ sơ...</Text>
-        </View>
-      )}
+    <ScreenContainer header={header} withBottomInset keyboardAvoiding>
+      {loading && <LoadingState message="Đang tải hồ sơ..." style={styles.inlineLoading} />}
       {error && !loading && <Text style={styles.errorText}>{error}</Text>}
 
-      
       {/* BMI */}
-      <Card style={styles.card}>
-        <View style={styles.calorieHeader}>
-          <Ionicons name="body" size={24} color={COLORS.secondary} />
-          <Text style={styles.cardTitle}>Chỉ số cơ thể</Text>
-        </View>
+      <SectionHeader title="Chỉ số cơ thể" icon="body" style={styles.firstSection} />
+      <View style={styles.statsRow}>
+        <StatTile icon="resize-outline" label="Chiều cao" value={profile.height} unit="cm" color={COLORS.secondary} />
+        <StatTile icon="barbell-outline" label="Cân nặng" value={profile.weight} unit="kg" color={COLORS.purple} />
+        <StatTile icon="speedometer-outline" label="BMI" value={bmi} color={getBmiColor(bmiValue)} />
+      </View>
 
-        <View style={styles.statsRow}>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{profile.height} cm</Text>
-            <Text style={styles.statLabel}>Chiều cao</Text>
-          </View>
-
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{profile.weight} kg</Text>
-            <Text style={styles.statLabel}>Cân nặng</Text>
-          </View>
-
-          <View style={styles.stat}>
-            <Text style={[styles.statValue, { color: getBmiColor(bmiValue) }]}>{bmi}</Text>
-            <Text style={styles.statLabel}>BMI</Text>
-          </View>
-        </View>
-      </Card>
-
-      <Card style={styles.card}>
-        <Text style={styles.sectionTitle}>Thông tin cơ bản</Text>
+      {/* Basic Info */}
+      <SectionHeader title="Thông tin cơ bản" icon="person-outline" />
+      <Card style={styles.cardGap}>
         <View style={styles.doubleRow}>
           <View style={styles.halfInput}>
             <Text style={styles.label}>Tên</Text>
-
             <TextInput
               style={styles.input}
               value={profile.name}
-              onChangeText={(v) =>
-                updateProfile('name', v)
-              }
+              onChangeText={(v) => updateProfile('name', v)}
             />
           </View>
 
           <View style={styles.halfInput}>
             <Text style={styles.label}>Tuổi</Text>
-
             <TextInput
               style={styles.input}
               value={String(profile.age)}
-              onChangeText={(v) =>
-                updateProfile(
-                  'age',
-                  parseInt(v, 10) || 0
-                )
-              }
+              onChangeText={(v) => updateProfile('age', parseInt(v, 10) || 0)}
               keyboardType="number-pad"
             />
           </View>
         </View>
-        <View style={styles.inputRow}>
+
+        <View>
           <Text style={styles.label}>Giới tính</Text>
-          <View style={styles.genderRow}>
-            {(['male', 'female', 'other'] as const).map((g) => (
-              <TouchableOpacity
-                key={g}
-                style={[
-                  styles.genderButton,
-                  profile.gender === g && styles.genderButtonActive,
-                ]}
-                onPress={() => updateProfile('gender', g)}
-              >
-                <Text
-                  style={[
-                    styles.genderButtonText,
-                    profile.gender === g && styles.genderButtonTextActive,
-                  ]}
-                >
-                  {g === 'male' ? 'Nam' : g === 'female' ? 'Nữ' : 'Khác'}
-                </Text>
-              </TouchableOpacity>
+          <View style={styles.chipRow}>
+            {GENDER_OPTIONS.map((g) => (
+              <Chip
+                key={g.value}
+                label={g.label}
+                selected={profile.gender === g.value}
+                onPress={() => updateProfile('gender', g.value)}
+                style={styles.genderChip}
+              />
             ))}
           </View>
         </View>
+
         <View style={styles.doubleRow}>
           <View style={styles.halfInput}>
-            <Text style={styles.label}>Chiều cao (cm)</Text>
-
+            <Text style={styles.label} numberOfLines={1}>
+              Chiều cao (cm)
+            </Text>
             <TextInput
               style={styles.input}
               value={String(profile.height)}
-              onChangeText={(v) =>
-                updateProfile(
-                  'height',
-                  parseInt(v, 10) || 0
-                )
-              }
+              onChangeText={(v) => updateProfile('height', parseInt(v, 10) || 0)}
               keyboardType="number-pad"
             />
           </View>
 
           <View style={styles.halfInput}>
-            <Text style={styles.label}>Cân nặng (kg)</Text>
-
+            <Text style={styles.label} numberOfLines={1}>
+              Cân nặng (kg)
+            </Text>
             <TextInput
               style={styles.input}
               value={String(profile.weight)}
-              onChangeText={(v) =>
-                updateProfile(
-                  'weight',
-                  parseInt(v, 10) || 0
-                )
-              }
+              onChangeText={(v) => updateProfile('weight', parseInt(v, 10) || 0)}
               keyboardType="decimal-pad"
             />
           </View>
@@ -255,318 +240,195 @@ export function UserProfileScreen() {
       </Card>
 
       {/* Activity Level */}
-      <Card style={styles.card}>
-        <Text style={styles.sectionTitle}>Mức độ vận động</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <SectionHeader title="Mức độ vận động" icon="walk-outline" />
+      <Card>
+        <View style={styles.chipRow}>
           {FITNESS_OPTIONS.map((opt) => (
-            <TouchableOpacity
+            <Chip
               key={opt.value}
-              style={[
-                styles.chip,
-                profile.fitnessLevel === opt.value && styles.chipActive,
-              ]}
+              label={opt.label}
+              selected={profile.fitnessLevel === opt.value}
               onPress={() => updateProfile('fitnessLevel', opt.value)}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  profile.fitnessLevel === opt.value && styles.chipTextActive,
-                ]}
-              >
-                {opt.label}
-              </Text>
-            </TouchableOpacity>
+            />
           ))}
-        </ScrollView>
+        </View>
       </Card>
 
       {/* Health Goal */}
-      <Card style={styles.card}>
-        <Text style={styles.sectionTitle}>Mục tiêu sức khỏe</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.goalRow}
-        >
+      <SectionHeader title="Mục tiêu sức khỏe" icon="flag-outline" />
+      <Card>
+        <View style={styles.chipRow}>
           {GOAL_OPTIONS.map((opt) => (
-            <TouchableOpacity
+            <Chip
               key={opt.value}
-              style={[
-                styles.goalButton,
-                profile.healthGoal === opt.value && styles.goalButtonActive,
-              ]}
+              label={opt.label}
+              icon={opt.icon}
+              selected={profile.healthGoal === opt.value}
               onPress={() => updateProfile('healthGoal', opt.value)}
-            >
-              <Ionicons
-                name={
-                  opt.value === 'lose_weight'
-                    ? 'trending-down'
-                    : opt.value === 'gain_weight'
-                    ? 'trending-up'
-                    : opt.value === 'maintain_weight'
-                    ? 'remove'
-                    : 'barbell'
-                }
-                size={20}
-                color={
-                  profile.healthGoal === opt.value ? '#FFF' : COLORS.textSecondary
-                }
-              />
-              <Text
-                style={[
-                  styles.goalButtonText,
-                  profile.healthGoal === opt.value && styles.goalButtonTextActive,
-                ]}
-              >
-                {opt.label}
-              </Text>
-            </TouchableOpacity>
+            />
           ))}
-        </ScrollView>
+        </View>
       </Card>
 
       {/* Dietary Restrictions */}
-      <Card style={styles.card}>
-        <Text style={styles.sectionTitle}>Chế độ ăn kiêng</Text>
+      <SectionHeader title="Chế độ ăn kiêng" icon="nutrition-outline" />
+      <Card>
         <TextInput
           style={[styles.input, styles.textArea]}
           placeholder="VD: không gluten, chay, dị ứng hạt"
           placeholderTextColor={COLORS.textMuted}
           value={dietaryInput}
-          onChangeText={(v) => {
-            setDietaryInput(v);
-            updateProfile(
-              'dietaryRestrictions',
-              v.split(',').map((s) => s.trim()).filter(Boolean)
-            );
-          }}
+          onChangeText={handleDietaryChange}
           multiline
         />
       </Card>
-      
-      {/* Basic Info */}
-      <Card style={styles.card}>
-        <Text style={styles.sectionTitle}>Tài khoản</Text>
 
-        <View style={styles.inputRow}>
+      {/* Account */}
+      <SectionHeader title="Tài khoản" icon="mail-outline" />
+      <Card style={styles.cardGap}>
+        <View style={styles.accountRow}>
           <Text style={styles.label}>Email</Text>
-          <Text style={styles.valueText}>{profile?.email}</Text>
+          <Text style={styles.valueText} numberOfLines={1}>
+            {profile.email}
+          </Text>
         </View>
 
-        <View style={styles.inputRow}>
+        <View style={styles.accountRow}>
           <Text style={styles.label}>Trạng thái</Text>
-          <Text
-            style={[
-              styles.valueText,
-              { color: profile?.isEmailVerified ? 'green' : 'orange' },
-            ]}
-          >
-            {profile?.isEmailVerified ? 'Đã xác thực' : 'Chưa xác thực'}
-          </Text>
+          <Badge
+            label={profile.isEmailVerified ? 'Đã xác thực' : 'Chưa xác thực'}
+            tone={profile.isEmailVerified ? 'success' : 'warning'}
+            icon={profile.isEmailVerified ? 'checkmark-circle' : 'alert-circle'}
+          />
         </View>
       </Card>
 
+      {/* Google Health */}
+      <SectionHeader title="Kết nối" icon="link-outline" />
       <TouchableOpacity
-        style={styles.logoutButton}
-        onPress={handleLogoutConfirm}
+        style={styles.linkCard}
+        onPress={openHealth}
         activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel="Google Health"
       >
-        <Ionicons name="log-out" size={22} color={COLORS.error} />
-        <Text style={styles.logoutButtonText}>Đăng xuất</Text>
+        <View style={styles.linkIcon}>
+          <Ionicons name="fitness" size={22} color={COLORS.primaryDark} />
+        </View>
+        <View style={styles.linkText}>
+          <Text style={styles.linkTitle} numberOfLines={1}>
+            Google Health
+          </Text>
+          <Text style={styles.linkSubtitle} numberOfLines={2}>
+            Kết nối & đồng bộ dữ liệu vận động
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={COLORS.textMuted} />
       </TouchableOpacity>
+
+      <Button
+        title="Đăng xuất"
+        icon="log-out-outline"
+        variant="danger"
+        onPress={handleLogoutConfirm}
+        fullWidth
+        style={styles.logout}
+      />
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  firstSection: {
+    marginTop: SPACING.sm,
+  },
+  inlineLoading: {
+    paddingVertical: SPACING.md,
+  },
+  errorText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.error,
+    marginBottom: SPACING.sm,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+  },
+  cardGap: {
+    gap: SPACING.md,
+  },
   doubleRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: SPACING.sm + 4,
   },
-
   halfInput: {
     flex: 1,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: SPACING.xs,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.lg,
-  },
-  card: {
-    marginBottom: SPACING.md,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: SPACING.md,
-  },
-  inputRow: {
-    marginBottom: SPACING.md,
+    minWidth: 0,
   },
   label: {
-    fontSize: 14,
+    ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
     marginBottom: SPACING.xs,
   },
   input: {
-    backgroundColor: COLORS.background,
-    borderRadius: 12,
-    padding: SPACING.md,
-    fontSize: 16,
+    ...TYPOGRAPHY.body,
+    backgroundColor: COLORS.surfaceMuted,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: SPACING.sm + 4,
+    paddingVertical: SPACING.sm + 2,
     color: COLORS.text,
   },
   textArea: {
     minHeight: 80,
     textAlignVertical: 'top',
   },
-  genderRow: {
+  chipRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: SPACING.sm,
   },
-  genderButton: {
-    flex: 1,
-    paddingVertical: SPACING.sm,
-    borderRadius: 12,
-    backgroundColor: COLORS.background,
-    alignItems: 'center',
-  },
-  genderButtonActive: {
-    backgroundColor: COLORS.primary,
-  },
-  genderButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  genderButtonTextActive: {
-    color: '#FFF',
-  },
-  chip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 20,
-    backgroundColor: COLORS.background,
-    marginRight: SPACING.sm,
-  },
-  chipActive: {
-    backgroundColor: COLORS.primary,
-  },
-  chipText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: COLORS.textSecondary,
-  },
-  chipTextActive: {
-    color: '#FFF',
-  },
-  goalRow: {
-    paddingRight: 12,
-  },
-  goalButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-
-    borderRadius: 20,
-
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-
-    marginRight: 12,
-  },
-  goalButtonActive: {
-    backgroundColor: COLORS.primary,
-  },
-  goalButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  goalButtonTextActive: {
-    color: '#FFF',
-  },
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    marginBottom: SPACING.md,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-  },
-  errorText: {
-    fontSize: 14,
-    color: COLORS.error,
-    marginBottom: SPACING.md,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  genderChip: {
+    flexGrow: 1,
     justifyContent: 'center',
-    gap: SPACING.sm,
-    paddingVertical: SPACING.md,
-    marginTop: SPACING.lg,
-    borderWidth: 1,
-    borderColor: COLORS.error,
-    borderRadius: 12,
   },
-  logoutButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.error,
+  accountRow: {
+    gap: SPACING.xxs,
   },
   valueText: {
-    fontSize: 15,
-    fontWeight: '500',
+    ...TYPOGRAPHY.bodyStrong,
     color: COLORS.text,
+    flexShrink: 1,
   },
-  calorieHeader: {
+  linkCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
-    marginBottom: SPACING.sm,
+    gap: SPACING.sm + 4,
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.md,
+    ...SHADOWS.md,
   },
-
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
-
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: SPACING.sm,
-    paddingTop: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-
-  stat: {
+  linkIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primarySoft,
   },
-
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700',
+  linkText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  linkTitle: {
+    ...TYPOGRAPHY.bodyStrong,
     color: COLORS.text,
   },
-
-  statLabel: {
-    fontSize: 12,
+  linkSubtitle: {
+    ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
-    marginTop: SPACING.xs,
+  },
+  logout: {
+    marginTop: SPACING.lg,
   },
 });

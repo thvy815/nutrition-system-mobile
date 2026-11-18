@@ -1,8 +1,14 @@
-import React from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import React, { memo } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Card } from './Card';
-import { COLORS, SPACING } from '../constants/theme';
+import {
+  BORDER_RADIUS,
+  COLORS,
+  METRIC_COLORS,
+  SHADOWS,
+  SPACING,
+  TYPOGRAPHY,
+} from '../constants/theme';
 import { Meal } from '../types';
 
 interface MealCardProps {
@@ -11,218 +17,176 @@ interface MealCardProps {
   onDelete?: (meal: Meal) => void;
 }
 
-export function MealCard({ meal, onToggleCheck, onDelete }: MealCardProps) {
+export const MealCard = memo(function MealCard({ meal, onToggleCheck, onDelete }: MealCardProps) {
+  const checked = !!meal.isChecked;
+
   return (
-    <Card style={styles.card}>
-      <View style={styles.row}>
+    <View style={[styles.card, checked && styles.cardChecked]}>
+      {meal.imageUrl ? (
+        <Image source={{ uri: meal.imageUrl }} style={styles.image} />
+      ) : (
+        <View style={[styles.image, styles.imageFallback]}>
+          <Ionicons name="restaurant-outline" size={26} color={COLORS.textMuted} />
+        </View>
+      )}
 
-        {/* IMAGE */}
-        <Image
-          source={{ uri: meal.imageUrl || 'https://via.placeholder.com/80' }}
-          style={styles.image}
-        />
-
-        {/* RIGHT */}
-        <View style={styles.content}>
-
-          {/* HEADER */}
-          <View style={styles.header}>
-            <View style={{ flex: 1 }}>
-              <Text numberOfLines={2} style={styles.name}>
-                {meal.name}
-              </Text>
-
-              {meal.scale && meal.scale !== 1 && (
-                <Text style={styles.scale}>Phần: {meal.scale}</Text>
-              )}
-            </View>
-
-            {/* ACTIONS */}
-            <View style={styles.actions}>
-
-              {/* CHECK */}
-              <Ionicons
-                name={meal.isChecked ? 'checkmark-circle' : 'ellipse-outline'}
-                size={24}
-                color={meal.isChecked ? COLORS.success : COLORS.textSecondary}
-                onPress={() => onToggleCheck?.(meal)}
-              />
-
-              {/* DELETE */}
-              <Ionicons
-                name="trash-outline"
-                size={20}
-                color="#EF4444"
-                onPress={() => onDelete?.(meal)}
-                style={{ marginLeft: 12 }}
-              />
-            </View>
-          </View>
-
-          {/* 🔥 CALORIES (nổi bật riêng) */}
-          <View style={styles.caloriesRow}>
-            <Ionicons name="flame" size={16} color={COLORS.accent} />
-            <Text style={styles.caloriesText}>
-              {meal.calories} kcal
+      <View style={styles.content}>
+        <View style={styles.header}>
+          <View style={styles.titleWrap}>
+            <Text numberOfLines={2} style={[styles.name, checked && styles.nameChecked]}>
+              {meal.name}
             </Text>
+            {meal.scale && meal.scale !== 1 ? (
+              <Text style={styles.scale} numberOfLines={1}>
+                Phần: {meal.scale}
+              </Text>
+            ) : null}
           </View>
 
-          {/* MACROS (3 cái 1 hàng) */}
-          <View style={styles.macrosRow}>
-            <Macro label="Đạm" value={meal.protein} />
-            <Macro label="Carb" value={meal.carbs} />
-            <Macro label="Béo" value={meal.fat} />
+          <View style={styles.actions}>
+            <TouchableOpacity
+              onPress={() => onToggleCheck?.(meal)}
+              hitSlop={8}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked }}
+              accessibilityLabel="Đánh dấu đã ăn"
+            >
+              <Ionicons
+                name={checked ? 'checkmark-circle' : 'ellipse-outline'}
+                size={26}
+                color={checked ? COLORS.success : COLORS.textMuted}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => onDelete?.(meal)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Xóa món"
+            >
+              <Ionicons name="trash-outline" size={20} color={COLORS.error} />
+            </TouchableOpacity>
           </View>
+        </View>
 
+        <View style={styles.caloriesRow}>
+          <Ionicons name="flame" size={15} color={METRIC_COLORS.calories} />
+          <Text style={styles.caloriesText} numberOfLines={1}>
+            {Math.round(meal.calories || 0)} kcal
+          </Text>
+        </View>
+
+        <View style={styles.macrosRow}>
+          <Macro label="Đạm" value={meal.protein} color={METRIC_COLORS.protein} />
+          <Macro label="Tinh bột" value={meal.carbs} color={METRIC_COLORS.carbs} />
+          <Macro label="Béo" value={meal.fat} color={METRIC_COLORS.fat} />
         </View>
       </View>
-    </Card>
+    </View>
   );
-}
+});
 
-
-// ===== macro nhỏ =====
-function Macro({ label, value }: { label: string; value: number }) {
+function Macro({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <View style={styles.macroBox}>
-      <Text style={styles.macroValue}>{Math.round(value)}g</Text>
-      <Text style={styles.macroLabel}>{label}</Text>
+      <View style={[styles.macroDot, { backgroundColor: color }]} />
+      <Text style={styles.macroValue} numberOfLines={1}>
+        {Math.round(value || 0)}g
+      </Text>
+      <Text style={styles.macroLabel} numberOfLines={1}>
+        {label}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  card: {
+    flexDirection: 'row',
+    gap: SPACING.sm + 4,
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm + 4,
+    ...SHADOWS.sm,
+  },
+  cardChecked: {
+    backgroundColor: COLORS.primarySoft,
+  },
+  image: {
+    width: 72,
+    height: 72,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.surfaceMuted,
+  },
+  imageFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  content: {
+    flex: 1,
+    minWidth: 0,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+  },
+  titleWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  name: {
+    ...TYPOGRAPHY.bodyStrong,
+    color: COLORS.text,
+    flexShrink: 1,
+  },
+  nameChecked: {
+    color: COLORS.textSecondary,
+  },
+  scale: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.xxs,
+  },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: SPACING.sm + 4,
   },
-  card: {
-    marginBottom: SPACING.md,
-  },
-
-  row: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-  },
-
-  image: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    backgroundColor: '#eee',
-  },
-
-  content: {
-    flex: 1,
-  },
-
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-
-  name: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
-
-  serving: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-
-  /* 🔥 CALORIES */
   caloriesRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
+    gap: SPACING.xs,
+    marginTop: SPACING.xs,
   },
-
   caloriesText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: COLORS.accent,
+    ...TYPOGRAPHY.captionStrong,
+    color: METRIC_COLORS.calories,
   },
-
-  /* 🧠 MACROS */
   macrosRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
+    gap: SPACING.xs,
+    marginTop: SPACING.sm,
   },
-
   macroBox: {
     flex: 1,
-    alignItems: 'center',
-  },
-
-  macroValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
-
-  macroLabel: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-  },
-
-  scale: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 6,
-  },
-  mealCard: {
-    marginBottom: SPACING.md,
-  },
-  mealHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: SPACING.sm,
-  },
-  mealInfo: {
-    flex: 1,
-  },
-  mealName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
-  servingTimeBadge: {
-    backgroundColor: COLORS.primary + '20',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginTop: 4,
-    alignSelf: 'flex-start',
-  },
-  servingTimeText: {
-    fontSize: 12,
-    color: COLORS.primary,
-    fontWeight: '500',
-  },
-  macros: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.md,
-  },
-  macroItem: {
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.xs,
   },
-  // macroValue: {
-  //   fontSize: 14,
-  //   color: COLORS.textSecondary,
-  // },
-  portionText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: SPACING.sm,
+  macroDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
-})
+  macroValue: {
+    ...TYPOGRAPHY.captionStrong,
+    color: COLORS.text,
+  },
+  macroLabel: {
+    ...TYPOGRAPHY.small,
+    color: COLORS.textSecondary,
+    flexShrink: 1,
+  },
+});

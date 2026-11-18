@@ -1,27 +1,58 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  FlatList,
-  ActivityIndicator,
-  Image,
-  RefreshControl,
-} from 'react-native';
+import React, { useRef, memo, useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, Image, RefreshControl } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import {
+  useNavigation,
+  useFocusEffect,
+  type CompositeNavigationProp,
+} from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { ScreenContainer } from '../components/ScreenContainer';
-import { COLORS } from '../constants/theme';
+import {
+  ScreenContainer,
+  ScreenHeader,
+  IconButton,
+  Segmented,
+  Badge,
+  LoadingState,
+  EmptyState,
+} from '../components';
+import {
+  BORDER_RADIUS,
+  BOTTOM_SPACER,
+  COLORS,
+  METRIC_COLORS,
+  SHADOWS,
+  SPACING,
+  TYPOGRAPHY,
+} from '../constants/theme';
 import { getMealHistory, getWorkoutHistory } from '../services/history.service';
 import type { MealHistoryLog, WorkoutHistorySession } from '../types/history';
-import type { RootTabParamList } from '../navigation/AppNavigator';
+import type { RootStackParamList, RootTabParamList } from '../navigation/AppNavigator';
 
 type HistoryMode = 'nutrition' | 'workout';
 
-type NavigationProp = BottomTabNavigationProp<RootTabParamList>;
+type NavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<RootTabParamList, 'History'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
+
+const MODE_OPTIONS: { value: HistoryMode; label: string; icon: 'nutrition' | 'barbell' }[] = [
+  { value: 'nutrition', label: 'Dinh dưỡng', icon: 'nutrition' },
+  { value: 'workout', label: 'Bài tập', icon: 'barbell' },
+];
+
+const formatDate = (dateString: string) => {
+  return new Date(dateString).toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+};
+
+const mealKeyExtractor = (item: MealHistoryLog) => item._id;
+const workoutKeyExtractor = (item: WorkoutHistorySession) => item._id;
 
 export function HistoryScreen() {
   const navigation = useNavigation<NavigationProp>();
@@ -55,11 +86,11 @@ export function HistoryScreen() {
       const newLogs = res.data.logs;
       const pagination = res.data.pagination;
 
-      setLogs(prev => (nextPage === 1 ? newLogs : [...prev, ...newLogs]));
+      setLogs((prev) => (nextPage === 1 ? newLogs : [...prev, ...newLogs]));
       setPage(pagination.page);
       setTotalPages(pagination.totalPages);
     } catch (err) {
-      console.log('[HistoryScreen] fetch history error:', err);
+      console.error('[HistoryScreen] fetch history error:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -73,29 +104,27 @@ export function HistoryScreen() {
 
   const fetchWorkoutHistory = useCallback(async (nextPage = 1, isRefresh = false) => {
     try {
-        if (nextPage === 1 && !isRefresh) setLoadingWorkout(true);
-        if (nextPage > 1) setLoadingMoreWorkout(true);
+      if (nextPage === 1 && !isRefresh) setLoadingWorkout(true);
+      if (nextPage > 1) setLoadingMoreWorkout(true);
 
-        const res = await getWorkoutHistory({
+      const res = await getWorkoutHistory({
         page: nextPage,
         limit: 20,
-        });
+      });
 
-        const newSessions = res.data.sessions;
-        const pagination = res.data.pagination;
+      const newSessions = res.data.sessions;
+      const pagination = res.data.pagination;
 
-        setWorkoutSessions(prev =>
-        nextPage === 1 ? newSessions : [...prev, ...newSessions],
-        );
+      setWorkoutSessions((prev) => (nextPage === 1 ? newSessions : [...prev, ...newSessions]));
 
-        setWorkoutPage(pagination.page);
-        setWorkoutTotalPages(pagination.totalPages);
+      setWorkoutPage(pagination.page);
+      setWorkoutTotalPages(pagination.totalPages);
     } catch (err) {
-        console.log('[HistoryScreen] fetch workout history error:', err);
+      console.error('[HistoryScreen] fetch workout history error:', err);
     } finally {
-        setLoadingWorkout(false);
-        setRefreshingWorkout(false);
-        setLoadingMoreWorkout(false);
+      setLoadingWorkout(false);
+      setRefreshingWorkout(false);
+      setLoadingMoreWorkout(false);
     }
   }, []);
 
@@ -108,116 +137,96 @@ export function HistoryScreen() {
       if (mode === 'workout') {
         fetchWorkoutHistory(1, true);
       }
-    }, [mode, fetchMealHistory, fetchWorkoutHistory])
+    }, [mode, fetchMealHistory, fetchWorkoutHistory]),
   );
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     setRefreshing(true);
     fetchMealHistory(1, true);
-  };
+  }, [fetchMealHistory]);
 
-  const handleLoadMore = () => {
-    if (!loadingMore && page < totalPages) {
-      fetchMealHistory(page + 1);
+  // Ref chặn gọi trùng khi onEndReached bắn liên tiếp trước khi state kịp cập nhật.
+  const loadingMoreRef = useRef(false);
+  const handleLoadMore = useCallback(async () => {
+    if (loadingMoreRef.current || loadingMore || page >= totalPages) return;
+    loadingMoreRef.current = true;
+    try {
+      await fetchMealHistory(page + 1);
+    } finally {
+      loadingMoreRef.current = false;
     }
-  };
+  }, [loadingMore, page, totalPages, fetchMealHistory]);
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('vi-VN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-  };
+  const handleRefreshWorkout = useCallback(() => {
+    setRefreshingWorkout(true);
+    fetchWorkoutHistory(1, true);
+  }, [fetchWorkoutHistory]);
 
-  const renderMealItem = ({ item }: { item: MealHistoryLog }) => {
-    const nutrition = item.recipe?.nutrition;
+  const loadingMoreWorkoutRef = useRef(false);
+  const handleLoadMoreWorkout = useCallback(async () => {
+    if (loadingMoreWorkoutRef.current || loadingMoreWorkout || workoutPage >= workoutTotalPages) return;
+    loadingMoreWorkoutRef.current = true;
+    try {
+      await fetchWorkoutHistory(workoutPage + 1);
+    } finally {
+      loadingMoreWorkoutRef.current = false;
+    }
+  }, [loadingMoreWorkout, workoutPage, workoutTotalPages, fetchWorkoutHistory]);
 
-    return (
-      <View style={styles.card}>
-        <View style={styles.cardRow}>
-          {item.recipe?.imageUrl ? (
-            <Image source={{ uri: item.recipe.imageUrl }} style={styles.foodImage} />
-          ) : (
-            <View style={styles.imagePlaceholder}>
-              <Ionicons name="restaurant" size={28} color={COLORS.textMuted} />
-            </View>
-          )}
+  const handleModeChange = useCallback(
+    (next: HistoryMode) => {
+      setMode(next);
+      if (next === 'nutrition') {
+        fetchMealHistory(1, true);
+      } else {
+        fetchWorkoutHistory(1, true);
+      }
+    },
+    [fetchMealHistory, fetchWorkoutHistory],
+  );
 
-          <View style={styles.cardContent}>
-            <Text style={styles.foodName} numberOfLines={1}>
-              {item.recipe?.name || 'Món ăn chưa có tên'}
-            </Text>
+  const renderMealItem = useCallback(
+    ({ item }: { item: MealHistoryLog }) => <MealHistoryRow item={item} />,
+    [],
+  );
 
-            <Text style={styles.dateText}>
-              Ăn lúc: {formatDate(item.eatenAt)}
-            </Text>
-
-            <View style={styles.nutritionRow}>
-              <View style={styles.nutritionItem}>
-                <Text style={[styles.nutritionValue, styles.caloriesValue]}>
-                  {nutrition?.calories ?? 0}
-                </Text>
-                <Text style={styles.nutritionLabel}>kcal</Text>
-              </View>
-
-              <View style={styles.nutritionItem}>
-                <Text style={styles.nutritionValue}>
-                  {nutrition?.protein ?? 0}g
-                </Text>
-                <Text style={styles.nutritionLabel}>Protein</Text>
-              </View>
-
-              <View style={styles.nutritionItem}>
-                <Text style={styles.nutritionValue}>
-                  {nutrition?.carbs ?? 0}g
-                </Text>
-                <Text style={styles.nutritionLabel}>Carbs</Text>
-              </View>
-
-              <View style={styles.nutritionItem}>
-                <Text style={styles.nutritionValue}>
-                  {nutrition?.fat ?? 0}g
-                </Text>
-                <Text style={styles.nutritionLabel}>Fat</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-      </View>
-    );
-  };
+  const renderWorkoutItem = useCallback(
+    ({ item }: { item: WorkoutHistorySession }) => <WorkoutHistoryRow item={item} />,
+    [],
+  );
 
   const renderNutritionContent = () => {
     if (loading) {
-      return (
-        <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Đang tải lịch sử dinh dưỡng...</Text>
-        </View>
-      );
+      return <LoadingState message="Đang tải lịch sử dinh dưỡng..." style={styles.fill} />;
     }
 
     return (
       <FlatList
         data={logs}
-        keyExtractor={item => item._id}
+        keyExtractor={mealKeyExtractor}
         renderItem={renderMealItem}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
         }
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.3}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={logs.length === 0 && styles.emptyList}
+        contentContainerStyle={[styles.listContent, logs.length === 0 && styles.emptyList]}
+        initialNumToRender={8}
+        windowSize={7}
+        removeClippedSubviews
         ListEmptyComponent={
-          <View style={styles.centerBox}>
-            <Ionicons name="fast-food-outline" size={48} color={COLORS.textMuted} />
-            <Text style={styles.emptyTitle}>Chưa có lịch sử dinh dưỡng</Text>
-            <Text style={styles.emptyDesc}>
-              Các món ăn đã phân tích sẽ hiển thị tại đây.
-            </Text>
-          </View>
+          <EmptyState
+            icon="fast-food-outline"
+            title="Chưa có lịch sử dinh dưỡng"
+            message="Các món ăn đã phân tích sẽ hiển thị tại đây."
+            style={styles.fill}
+          />
         }
         ListFooterComponent={
           loadingMore ? (
@@ -230,380 +239,273 @@ export function HistoryScreen() {
     );
   };
 
-  const renderWorkoutItem = ({ item }: { item: WorkoutHistorySession }) => {
-    return (
-        <View style={styles.card}>
-        <View style={styles.workoutHeader}>
-            <View>
-            <Text style={styles.foodName} numberOfLines={1}>
-                {item.exerciseName || 'Bài tập'}
-            </Text>
-            <Text style={styles.dateText}>
-                Ngày {item.day} • {formatDate(item.endTime)}
-            </Text>
-            </View>
-
-            <View style={styles.kcalBadge}>
-            <Text style={styles.kcalText}>{item.actualCalories || 0} kcal</Text>
-            </View>
-        </View>
-
-        <View style={styles.nutritionRow}>
-            <View style={styles.nutritionItem}>
-            <Text style={styles.nutritionValue}>{item.durationMinutes || 0}</Text>
-            <Text style={styles.nutritionLabel}>phút</Text>
-            </View>
-
-            <View style={styles.nutritionItem}>
-            <Text style={styles.nutritionValue}>
-                {item.completedSets || 0}/{item.targetSets || 0}
-            </Text>
-            <Text style={styles.nutritionLabel}>Sets</Text>
-            </View>
-
-            <View style={styles.nutritionItem}>
-            <Text
-              style={[
-                styles.nutritionValue,
-                (item.performanceScore || 0) >= 7 && styles.goodScore,
-              ]}
-            >
-              {item.performanceScore || 0}/10
-            </Text>
-            <Text style={styles.nutritionLabel}>Hiệu suất</Text>
-            </View>
-
-            <View style={styles.nutritionItem}>
-            <Text
-              style={[
-                styles.nutritionValue,
-                (item.fatigueImpact || 0) >= 7 && styles.badScore,
-              ]}
-            >
-              {item.fatigueImpact || 0}/10
-            </Text>
-            <Text style={styles.nutritionLabel}>Mệt mỏi</Text>
-            </View>
-        </View>
-        </View>
-    );
-    };
-
   const renderWorkoutContent = () => {
     if (loadingWorkout) {
-        return (
-        <View style={styles.centerBox}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Đang tải lịch sử bài tập...</Text>
-        </View>
-        );
+      return <LoadingState message="Đang tải lịch sử bài tập..." style={styles.fill} />;
     }
 
     return (
-        <FlatList
+      <FlatList
         data={workoutSessions}
-        keyExtractor={item => item._id}
+        keyExtractor={workoutKeyExtractor}
         renderItem={renderWorkoutItem}
         refreshControl={
-            <RefreshControl
+          <RefreshControl
             refreshing={refreshingWorkout}
-            onRefresh={() => {
-                setRefreshingWorkout(true);
-                fetchWorkoutHistory(1, true);
-            }}
-            />
+            onRefresh={handleRefreshWorkout}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
         }
-        onEndReached={() => {
-            if (!loadingMoreWorkout && workoutPage < workoutTotalPages) {
-            fetchWorkoutHistory(workoutPage + 1);
-            }
-        }}
+        onEndReached={handleLoadMoreWorkout}
         onEndReachedThreshold={0.3}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={workoutSessions.length === 0 && styles.emptyList}
+        contentContainerStyle={[
+          styles.listContent,
+          workoutSessions.length === 0 && styles.emptyList,
+        ]}
+        initialNumToRender={8}
+        windowSize={7}
+        removeClippedSubviews
         ListEmptyComponent={
-            <View style={styles.centerBox}>
-            <Ionicons name="barbell-outline" size={52} color={COLORS.textMuted} />
-            <Text style={styles.emptyTitle}>Chưa có lịch sử bài tập</Text>
-            <Text style={styles.emptyDesc}>
-                Các bài tập đã hoàn thành sẽ hiển thị tại đây.
-            </Text>
-            </View>
+          <EmptyState
+            icon="barbell-outline"
+            title="Chưa có lịch sử bài tập"
+            message="Các bài tập đã hoàn thành sẽ hiển thị tại đây."
+            style={styles.fill}
+          />
         }
         ListFooterComponent={
-            loadingMoreWorkout ? (
+          loadingMoreWorkout ? (
             <View style={styles.footerLoading}>
-                <ActivityIndicator size="small" color={COLORS.primary} />
+              <ActivityIndicator size="small" color={COLORS.primary} />
             </View>
-            ) : null
+          ) : null
         }
-        />
+      />
     );
   };
 
   return (
-    <ScreenContainer scrollable={false}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Lịch sử</Text>
-          <Text style={styles.subtitle}>
-            Theo dõi dinh dưỡng và bài tập của bạn
-          </Text>
-        </View>
+    <ScreenContainer
+      scrollable={false}
+      header={
+        <ScreenHeader
+          title="Lịch sử"
+          subtitle="Theo dõi dinh dưỡng và bài tập của bạn"
+          right={
+            <IconButton
+              icon="person-circle-outline"
+              size={24}
+              color={COLORS.primary}
+              onPress={() => navigation.navigate('UserProfile')}
+              accessibilityLabel="Hồ sơ cá nhân"
+            />
+          }
+        />
+      }
+    >
+      <Segmented
+        options={MODE_OPTIONS}
+        value={mode}
+        onChange={handleModeChange}
+        style={styles.modeToggle}
+      />
 
-        <TouchableOpacity
-          style={styles.profileButton}
-          onPress={() => navigation.navigate('UserProfile')}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="person-circle-outline" size={30} color={COLORS.primary} />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.modeToggle}>
-        <TouchableOpacity
-          style={[
-            styles.modeButton,
-            mode === 'nutrition' && styles.modeButtonActive,
-          ]}
-          onPress={() => {
-            setMode('nutrition');
-            fetchMealHistory(1, true);
-          }}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name="nutrition"
-            size={22}
-            color={mode === 'nutrition' ? '#FFF' : COLORS.textMuted}
-          />
-          <Text
-            style={[
-              styles.modeButtonText,
-              mode === 'nutrition' && styles.modeButtonTextActive,
-            ]}
-          >
-            Dinh dưỡng
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.modeButton,
-            mode === 'workout' && styles.modeButtonActive,
-          ]}
-          onPress={() => {
-            setMode('workout');
-            fetchWorkoutHistory(1, true);
-          }}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name="barbell"
-            size={22}
-            color={mode === 'workout' ? '#FFF' : COLORS.textMuted}
-          />
-          <Text
-            style={[
-              styles.modeButtonText,
-              mode === 'workout' && styles.modeButtonTextActive,
-            ]}
-          >
-            Bài tập
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.content}>
+      <View style={styles.fill}>
         {mode === 'nutrition' ? renderNutritionContent() : renderWorkoutContent()}
       </View>
     </ScreenContainer>
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* Rows                                                                */
+/* ------------------------------------------------------------------ */
+
+const MealHistoryRow = memo(function MealHistoryRow({ item }: { item: MealHistoryLog }) {
+  const nutrition = item.recipe?.nutrition;
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardRow}>
+        {item.recipe?.imageUrl ? (
+          <Image source={{ uri: item.recipe.imageUrl }} style={styles.foodImage} />
+        ) : (
+          <View style={[styles.foodImage, styles.imagePlaceholder]}>
+            <Ionicons name="restaurant" size={26} color={COLORS.textMuted} />
+          </View>
+        )}
+
+        <View style={styles.cardContent}>
+          <Text style={styles.itemName} numberOfLines={1}>
+            {item.recipe?.name || 'Món ăn chưa có tên'}
+          </Text>
+          <Text style={styles.dateText} numberOfLines={1}>
+            Ăn lúc: {formatDate(item.eatenAt)}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.metricRow}>
+        <Metric
+          value={`${nutrition?.calories ?? 0}`}
+          label="kcal"
+          color={METRIC_COLORS.calories}
+        />
+        <Metric value={`${nutrition?.protein ?? 0}g`} label="Đạm" color={METRIC_COLORS.protein} />
+        <Metric value={`${nutrition?.carbs ?? 0}g`} label="Tinh bột" color={METRIC_COLORS.carbs} />
+        <Metric value={`${nutrition?.fat ?? 0}g`} label="Chất béo" color={METRIC_COLORS.fat} />
+      </View>
+    </View>
+  );
+});
+
+const WorkoutHistoryRow = memo(function WorkoutHistoryRow({
+  item,
+}: {
+  item: WorkoutHistorySession;
+}) {
+  const performance = item.performanceScore || 0;
+  const fatigue = item.fatigueImpact || 0;
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.workoutHeader}>
+        <View style={styles.workoutIcon}>
+          <Ionicons name="barbell" size={22} color={COLORS.primary} />
+        </View>
+        <View style={styles.cardContent}>
+          <Text style={styles.itemName} numberOfLines={1}>
+            {item.exerciseName || 'Bài tập'}
+          </Text>
+          <Text style={styles.dateText} numberOfLines={1}>
+            Ngày {item.day} • {formatDate(item.endTime)}
+          </Text>
+        </View>
+        <Badge label={`${item.actualCalories || 0} kcal`} tone="warning" icon="flame" />
+      </View>
+
+      <View style={styles.metricRow}>
+        <Metric value={`${item.durationMinutes || 0}`} label="phút" />
+        <Metric value={`${item.completedSets || 0}/${item.targetSets || 0}`} label="Hiệp" />
+        <Metric
+          value={`${performance}/10`}
+          label="Hiệu suất"
+          color={performance >= 7 ? COLORS.success : undefined}
+        />
+        <Metric
+          value={`${fatigue}/10`}
+          label="Mệt mỏi"
+          color={fatigue >= 7 ? COLORS.error : undefined}
+        />
+      </View>
+    </View>
+  );
+});
+
+function Metric({ value, label, color }: { value: string; label: string; color?: string }) {
+  return (
+    <View style={styles.metric}>
+      <Text style={[styles.metricValue, color ? { color } : null]} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text style={styles.metricLabel} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  caloriesValue: {
-    color: COLORS.primary,
-  },
-
-  goodScore: {
-    color: COLORS.primary, // xanh
-  },
-
-  badScore: {
-    color: COLORS.error, // đỏ
-  },
-
-  workoutHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-    gap: 12,
-    },
-
-    kcalBadge: {
-    backgroundColor: COLORS.background,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    },
-
-    kcalText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.primary,
-    },
-
-    workoutDesc: {
-    marginTop: 10,
-    fontSize: 13,
-    color: COLORS.textMuted,
-    },
-
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 18,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: 6,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: COLORS.textMuted,
-  },
-  profileButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+  fill: {
+    flex: 1,
   },
   modeToggle: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.surface,
-    borderRadius: 18,
-    padding: 6,
-    marginBottom: 18,
+    marginBottom: SPACING.md,
   },
-  modeButton: {
-    flex: 1,
-    height: 48,
-    borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+  listContent: {
+    paddingBottom: BOTTOM_SPACER,
   },
-  modeButtonActive: {
-    backgroundColor: COLORS.primary,
+  emptyList: {
+    flexGrow: 1,
   },
-  modeButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: COLORS.textMuted,
+  footerLoading: {
+    paddingVertical: SPACING.md,
   },
-  modeButtonTextActive: {
-    color: '#FFF',
-  },
-  content: {
-    flex: 1,
-  },
+
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: 18,
-    padding: 12,
-    marginBottom: 12,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm + 4,
+    gap: SPACING.sm + 4,
+    ...SHADOWS.sm,
   },
   cardRow: {
     flexDirection: 'row',
-    gap: 12,
+    alignItems: 'center',
+    gap: SPACING.sm + 4,
   },
   foodImage: {
-    width: 74,
-    height: 74,
-    borderRadius: 14,
-    backgroundColor: COLORS.background,
+    width: 56,
+    height: 56,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.surfaceMuted,
   },
   imagePlaceholder: {
-    width: 74,
-    height: 74,
-    borderRadius: 14,
-    backgroundColor: COLORS.background,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cardContent: {
     flex: 1,
+    minWidth: 0,
   },
-  foodName: {
-    fontSize: 16,
-    fontWeight: '700',
+  itemName: {
+    ...TYPOGRAPHY.bodyStrong,
     color: COLORS.text,
-    marginBottom: 4,
+    flexShrink: 1,
   },
   dateText: {
-    fontSize: 13,
-    color: COLORS.textMuted,
-    marginBottom: 10,
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.xxs,
   },
-  nutritionRow: {
+
+  workoutHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-  },
-  nutritionItem: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    borderRadius: 10,
-    paddingVertical: 7,
     alignItems: 'center',
+    gap: SPACING.sm + 4,
   },
-  nutritionValue: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-  nutritionLabel: {
-    fontSize: 11,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  centerBox: {
-    flex: 1,
+  workoutIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    backgroundColor: COLORS.primarySoft,
   },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: COLORS.textMuted,
+
+  metricRow: {
+    flexDirection: 'row',
+    gap: SPACING.xs + 2,
   },
-  emptyList: {
-    flexGrow: 1,
+  metric: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    backgroundColor: COLORS.surfaceMuted,
+    borderRadius: BORDER_RADIUS.sm,
+    paddingVertical: SPACING.sm - 1,
+    paddingHorizontal: SPACING.xs,
   },
-  emptyTitle: {
-    marginTop: 12,
-    fontSize: 17,
-    fontWeight: '700',
+  metricValue: {
+    ...TYPOGRAPHY.captionStrong,
     color: COLORS.text,
-    textAlign: 'center',
   },
-  emptyDesc: {
-    marginTop: 6,
-    fontSize: 14,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  footerLoading: {
-    paddingVertical: 16,
+  metricLabel: {
+    ...TYPOGRAPHY.small,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.xxs,
   },
 });

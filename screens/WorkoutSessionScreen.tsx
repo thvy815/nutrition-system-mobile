@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   ScrollView,
@@ -6,25 +6,40 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
-  Dimensions,
-  ActivityIndicator,
   Alert,
+  LayoutChangeEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useWorkout } from '../contexts/WorkoutContext';
-import { ScreenContainer } from '../components/ScreenContainer';
-import { COLORS, SPACING, BORDER_RADIUS, SHADOWS } from '../constants/theme';
+import {
+  Badge,
+  Button,
+  ErrorState,
+  LoadingState,
+  ScreenContainer,
+  ScreenHeader,
+  StatTile,
+} from '../components';
+import { COLORS, SPACING, BORDER_RADIUS, SHADOWS, TYPOGRAPHY } from '../constants/theme';
 import { workoutService } from '../services/workout.service';
 import { WorkoutSessionData } from '../types/workout';
 import { exerciseService } from '../services/exercise.service';
 import { ExerciseDetail } from '../types/exercise';
 
-const { width, height } = Dimensions.get('window');
-
 const stripHtml = (html: string) => {
   return html ? html.replace(/<[^>]*>/g, '') : '';
 };
+
+const formatTime = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+const DIFFICULTY_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 interface SessionState {
   isRunning: boolean;
@@ -39,6 +54,198 @@ interface ExerciseSet {
   reps: string;
   restSeconds?: number;
 }
+
+/* ------------------------------------------------------------------ */
+/* Sub-components (memo để không render lại mỗi giây theo timer)       */
+/* ------------------------------------------------------------------ */
+
+const ImageCarousel = memo(function ImageCarousel({ images }: { images?: string[] }) {
+  const [pageWidth, setPageWidth] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const list = images ?? [];
+
+  const onLayout = useCallback((e: LayoutChangeEvent) => {
+    setPageWidth(e.nativeEvent.layout.width);
+  }, []);
+
+  const onMomentumEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (!pageWidth) return;
+      setCurrentIndex(Math.round(e.nativeEvent.contentOffset.x / pageWidth));
+    },
+    [pageWidth]
+  );
+
+  if (list.length === 0) {
+    return (
+      <View style={[styles.imageCard, styles.emptyImage]}>
+        <MaterialCommunityIcons name="image-off-outline" size={44} color={COLORS.textMuted} />
+        <Text style={styles.emptyText}>Không có hình ảnh</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.imageCard} onLayout={onLayout}>
+      {pageWidth > 0 ? (
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          decelerationRate="fast"
+          disableIntervalMomentum
+          onMomentumScrollEnd={onMomentumEnd}
+        >
+          {list.map((img, index) => (
+            <View key={index} style={{ width: pageWidth }}>
+              <Image source={{ uri: img }} style={styles.image} resizeMode="contain" />
+            </View>
+          ))}
+        </ScrollView>
+      ) : (
+        <View style={styles.image} />
+      )}
+      {list.length > 1 ? (
+        <View style={styles.dots}>
+          {list.map((_, i) => (
+            <View key={i} style={[styles.dot, i === currentIndex && styles.dotActive]} />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+});
+
+const CounterGroup = memo(function CounterGroup({
+  label,
+  onDecrease,
+  onIncrease,
+}: {
+  label: string;
+  onDecrease: () => void;
+  onIncrease: () => void;
+}) {
+  return (
+    <View style={styles.counterGroup}>
+      <Text style={styles.counterLabel} numberOfLines={1}>
+        {label}
+      </Text>
+      <View style={styles.counterControl}>
+        <TouchableOpacity
+          style={styles.minusBtn}
+          onPress={onDecrease}
+          accessibilityRole="button"
+          accessibilityLabel={`Giảm ${label}`}
+        >
+          <MaterialCommunityIcons name="minus" size={18} color={COLORS.primary} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.plusBtn}
+          onPress={onIncrease}
+          accessibilityRole="button"
+          accessibilityLabel={`Tăng ${label}`}
+        >
+          <MaterialCommunityIcons name="plus" size={18} color={COLORS.textInverse} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+});
+
+const DifficultyPicker = memo(function DifficultyPicker({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <View style={styles.difficulty}>
+      <View style={styles.difficultyHeader}>
+        <Text style={styles.difficultyTitle}>Độ khó</Text>
+        <Text style={styles.difficultyValue}>{value}/10</Text>
+      </View>
+      <View style={styles.difficultyRow}>
+        {DIFFICULTY_VALUES.map((v) => {
+          const active = value === v;
+          return (
+            <TouchableOpacity
+              key={v}
+              style={[styles.difficultyBtn, active && styles.difficultyBtnActive]}
+              onPress={() => onChange(v)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+            >
+              <Text style={[styles.difficultyText, active && styles.difficultyTextActive]}>{v}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+});
+
+/** Phần thông tin tĩnh của bài tập: hướng dẫn, dụng cụ, nhóm cơ. */
+const ExerciseInfo = memo(function ExerciseInfo({ exercise }: { exercise: ExerciseDetail }) {
+  const description = useMemo(() => stripHtml(exercise.description), [exercise.description]);
+  const hasPrimary = !!exercise.muscles && exercise.muscles.length > 0;
+  const hasSecondary = !!exercise.muscles_secondary && exercise.muscles_secondary.length > 0;
+
+  return (
+    <>
+      {/* Description */}
+      {exercise.description ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Hướng dẫn</Text>
+          <Text style={styles.description}>{description}</Text>
+        </View>
+      ) : null}
+
+      {/* Equipment Info */}
+      {exercise.equipment && exercise.equipment.length > 0 ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Dụng cụ cần thiết</Text>
+          <View style={styles.tagRow}>
+            {exercise.equipment.map((eq) => (
+              <Badge key={eq.id} label={eq.name} tone="info" icon="construct-outline" />
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      {/* Muscle Groups */}
+      {hasPrimary || hasSecondary ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Nhóm cơ tác động</Text>
+
+          {hasPrimary ? (
+            <>
+              <Text style={styles.subTitle}>Nhóm cơ chính</Text>
+              <View style={styles.tagRow}>
+                {exercise.muscles.map((muscle) => (
+                  <Badge key={muscle.id} label={muscle.name_en} tone="success" />
+                ))}
+              </View>
+            </>
+          ) : null}
+
+          {hasSecondary ? (
+            <>
+              <Text style={styles.subTitle}>Nhóm cơ phụ</Text>
+              <View style={styles.tagRow}>
+                {exercise.muscles_secondary.map((muscle) => (
+                  <Badge key={muscle.id} label={muscle.name_en} tone="neutral" />
+                ))}
+              </View>
+            </>
+          ) : null}
+        </View>
+      ) : null}
+    </>
+  );
+});
+
+/* ------------------------------------------------------------------ */
 
 export const WorkoutSessionScreen = ({ route, navigation }: any) => {
   const { dayNumber, exerciseId } = route?.params || {};
@@ -60,20 +267,27 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
 
   const timerInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionId = useRef<string | null>(null);
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-  // Get exercise details and sets info
-  const exerciseDetailsFromDay = plan?.days
-    .find(d => d.day === dayNumber)
-    ?.exerciseDetails?.find(e => e.exerciseId === exerciseId);
+  // Get exercise details and sets info (memo: không tính lại mỗi tick của timer)
+  const exerciseDetailsFromDay = useMemo(
+    () =>
+      plan?.days
+        .find(d => d.day === dayNumber)
+        ?.exerciseDetails?.find(e => e.exerciseId === exerciseId),
+    [plan, dayNumber, exerciseId]
+  );
 
-  const sets: ExerciseSet[] = exerciseDetailsFromDay?.sets
-    ? Array.from({ length: exerciseDetailsFromDay.sets }, (_, i) => ({
-        setNumber: i + 1,
-        reps: exerciseDetailsFromDay.reps || '8-12',
-        restSeconds: 60, // Default rest between sets
-      }))
-    : [];
+  const sets: ExerciseSet[] = useMemo(
+    () =>
+      exerciseDetailsFromDay?.sets
+        ? Array.from({ length: exerciseDetailsFromDay.sets }, (_, i) => ({
+            setNumber: i + 1,
+            reps: exerciseDetailsFromDay.reps || '8-12',
+            restSeconds: 60, // Default rest between sets
+          }))
+        : [],
+    [exerciseDetailsFromDay]
+  );
 
   useEffect(() => {
     loadExercise();
@@ -94,10 +308,6 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
 
   const startSession = async () => {
     try {
-      console.log('USER:', user);
-      console.log('EXERCISE ID:', exerciseId);
-      console.log('PLAN:', plan);
-      console.log('PLAN ID:', plan?._id);
       
       if (!user?._id || !exerciseId || !plan?._id) {
         Alert.alert('Lỗi', 'Thiếu thông tin người dùng, bài tập hoặc kế hoạch tập');
@@ -180,19 +390,19 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
     };
   }, [sessionState.isRunning, sessionState.isPaused]);
 
-  const decreaseRep = () => {
+  const decreaseRep = useCallback(() => {
     setSessionState(prev => ({
       ...prev,
       completedReps: Math.max(0, prev.completedReps - 1),
     }));
-  };
+  }, []);
 
-  const decreaseSet = () => {
+  const decreaseSet = useCallback(() => {
     setSessionState(prev => ({
       ...prev,
       completedSets: Math.max(0, prev.completedSets - 1),
     }));
-  };
+  }, []);
 
   const isOverTraining = (nextSets: number, nextReps: number) => {
     const targetSets = exerciseDetailsFromDay?.sets || 3;
@@ -374,930 +584,377 @@ export const WorkoutSessionScreen = ({ route, navigation }: any) => {
     }
   };
 
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
+  // Giữ tham chiếu tới stopSession mới nhất để handler quay lại ổn định giữa các tick.
+  const stopSessionRef = useRef(stopSession);
+  stopSessionRef.current = stopSession;
+
+  const isRunning = sessionState.isRunning;
+  const handleBack = useCallback(() => {
+    if (isRunning) {
+      Alert.alert(
+        'Xác nhận',
+        'Bạn đang trong buổi tập. Bấm dừng để kết thúc hoặc tiếp tục tập?',
+        [
+          { text: 'Tiếp tục tập', style: 'cancel' },
+          {
+            text: 'Dừng lại',
+            style: 'destructive',
+            onPress: () => stopSessionRef.current(),
+          },
+        ]
+      );
+    } else {
+      navigation.goBack();
+    }
+  }, [isRunning, navigation]);
+
+  const goBack = useCallback(() => navigation.goBack(), [navigation]);
 
   if (loading) {
     return (
-      <ScreenContainer>
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
+      <ScreenContainer header={<ScreenHeader title="Buổi tập" onBack={goBack} />}>
+        <LoadingState />
       </ScreenContainer>
     );
   }
 
   if (error || !exercise) {
     return (
-      <ScreenContainer>
-        <View style={styles.centerContainer}>
-          <Text style={styles.errorText}>{error || 'Không tìm thấy bài tập'}</Text>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Text style={styles.backButtonText}>Quay lại</Text>
-          </TouchableOpacity>
-        </View>
+      <ScreenContainer header={<ScreenHeader title="Buổi tập" onBack={goBack} />}>
+        <ErrorState message={error || 'Không tìm thấy bài tập'} />
+        <Button title="Quay lại" variant="outline" icon="arrow-back" onPress={goBack} />
       </ScreenContainer>
     );
   }
 
   const hasStarted = session !== null && sessionState.isRunning;
+  const restSeconds = sets[Math.max(sessionState.completedSets, 0)]?.restSeconds || 60;
 
   return (
-    <ScreenContainer>
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backBtn}
-            onPress={() => {
-              if (sessionState.isRunning) {
-                Alert.alert(
-                  'Xác nhận',
-                  'Bạn đang trong buổi tập. Bấm dừng để kết thúc hoặc tiếp tục tập?',
-                  [
-                    { text: 'Tiếp tục tập', style: 'cancel' },
-                    {
-                      text: 'Dừng lại',
-                      style: 'destructive',
-                      onPress: stopSession,
-                    },
-                  ]
-                );
-              } else {
-                navigation.goBack();
-              }
-            }}
-          >
-            <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.surface} />
-          </TouchableOpacity>
-          <Text style={styles.exerciseTitle}>{exercise.name}</Text>
-          <View style={{ width: 32 }} />
-        </View>
+    <ScreenContainer header={<ScreenHeader title={exercise.name} onBack={handleBack} />}>
+      {/* Exercise Image */}
+      <ImageCarousel images={exercise.images} />
 
-        {/* Exercise Image */}
-        <View style={styles.imageWrapper}>
-            {exercise.images && exercise.images.length > 0 ? (
-                <ScrollView
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                decelerationRate="fast"
-                disableIntervalMomentum
-                onScroll={(e) => {
-                    const index = Math.round(
-                    e.nativeEvent.contentOffset.x / width
-                    );
-                    setCurrentImageIndex(index);
-                }}
-                scrollEventThrottle={16}
-                >
-                {exercise.images.map((img: string, index: number) => (
-                    <View
-                    key={index}
-                    style={{
-                        width,
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                    }}
-                    >
-                    <Image source={{ uri: img }} style={styles.image} />
-                    </View>
-                ))}
-                </ScrollView>
-            ) : (
-                <View style={styles.emptyImage}>
-                <MaterialCommunityIcons
-                    name="image-off-outline"
-                    size={50}
-                    color="#999"
-                />
-                <Text style={styles.emptyText}>Không có hình ảnh</Text>
-                </View>
-            )}
-        </View>
+      {/* Video Section */}
+      {exercise.videos && exercise.videos.length > 0 && (
+        <TouchableOpacity style={styles.videoRow} activeOpacity={0.8}>
+          <MaterialCommunityIcons name="play-circle" size={28} color={COLORS.primary} />
+          <Text style={styles.videoText} numberOfLines={1}>
+            Xem video hướng dẫn ({exercise.videos.length})
+          </Text>
+        </TouchableOpacity>
+      )}
 
-        {/* Video Section */}
-        {exercise.videos && exercise.videos.length > 0 && (
-          <TouchableOpacity style={styles.videoSection}>
-            <MaterialCommunityIcons name="play-circle" size={32} color={COLORS.primary} />
-            <Text style={styles.videoText}>Xem video hướng dẫn ({exercise.videos.length})</Text>
-          </TouchableOpacity>
-        )}
+      {/* Exercise Info */}
+      <View style={styles.infoRow}>
+        <StatTile icon="repeat" label="Sets" value={exerciseDetailsFromDay?.sets || '3'} />
+        <StatTile icon="barbell-outline" label="Reps" value={exerciseDetailsFromDay?.reps || '8-12'} />
+        <StatTile
+          icon="time-outline"
+          label="Thời gian"
+          value={exerciseDetailsFromDay?.duration || '-'}
+          unit="phút"
+        />
+      </View>
 
-        {/* Exercise Info */}
-        <View style={styles.infoSection}>
-          <View style={styles.infoRow}>
-            <View style={styles.infoItem}>
-              <MaterialCommunityIcons name="repeat" size={20} color={COLORS.primary} />
-              <Text style={styles.infoLabel}>Sets</Text>
-              <Text style={styles.infoValue}>{exerciseDetailsFromDay?.sets || '3'}</Text>
+      {/* Timer Section */}
+      {hasStarted && (
+        <View style={styles.workoutCard}>
+          <Text style={styles.timer}>{formatTime(sessionState.elapsedSeconds)}</Text>
+          {sessionState.isPaused ? (
+            <Badge label="Đã tạm dừng" tone="warning" icon="pause" style={styles.pausedBadge} />
+          ) : null}
+
+          <View style={styles.statsRow}>
+            <View style={styles.statBox}>
+              <Text style={styles.statLabel}>Sets</Text>
+              <Text style={styles.statValue} numberOfLines={1}>
+                {sessionState.completedSets}/{sets.length || 3}
+              </Text>
             </View>
-            <View style={styles.infoItem}>
-              <MaterialCommunityIcons name="dumbbell" size={20} color={COLORS.primary} />
-              <Text style={styles.infoLabel}>Reps</Text>
-              <Text style={styles.infoValue}>{exerciseDetailsFromDay?.reps || '8-12'}</Text>
+
+            <View style={styles.statBox}>
+              <Text style={styles.statLabel}>Reps</Text>
+              <Text style={styles.statValue} numberOfLines={1}>
+                {sessionState.completedReps}
+              </Text>
             </View>
-            <View style={styles.infoItem}>
-              <MaterialCommunityIcons name="clock-outline" size={20} color={COLORS.primary} />
-              <Text style={styles.infoLabel}>Thời gian</Text>
-              <Text style={styles.infoValue}>{exerciseDetailsFromDay?.duration || '-'} phút</Text>
+
+            <View style={styles.statBox}>
+              <Text style={styles.statLabel}>Nghỉ</Text>
+              <Text style={styles.statValue} numberOfLines={1}>
+                {restSeconds}s
+              </Text>
             </View>
+          </View>
+
+          <View style={styles.counterRow}>
+            <CounterGroup label="Sets" onDecrease={decreaseSet} onIncrease={increaseSet} />
+            <CounterGroup label="Reps" onDecrease={decreaseRep} onIncrease={increaseRep} />
+          </View>
+
+          <DifficultyPicker value={perceivedDifficulty} onChange={setPerceivedDifficulty} />
+
+          <View style={styles.actionRow}>
+            <Button
+              title={sessionState.isPaused ? 'Tiếp tục' : 'Tạm dừng'}
+              icon={sessionState.isPaused ? 'play' : 'pause'}
+              variant={sessionState.isPaused ? 'primary' : 'secondary'}
+              onPress={togglePause}
+              style={styles.actionBtn}
+            />
+            <Button
+              title="Dừng"
+              icon="stop-circle"
+              variant="danger"
+              onPress={stopSession}
+              style={styles.actionBtn}
+            />
           </View>
         </View>
+      )}
 
-        {/* Timer Section */}
-        {hasStarted && (
-          <View style={styles.compactWorkoutCard}>
-            <Text style={styles.compactTimer}>
-              {formatTime(sessionState.elapsedSeconds)}
-            </Text>
+      {!hasStarted && (
+        <Button
+          title="BẮT ĐẦU TẬP"
+          icon="play"
+          onPress={startSession}
+          fullWidth
+          style={styles.startButton}
+        />
+      )}
 
-            <View style={styles.compactStatsRow}>
-              <View style={styles.compactStatBox}>
-                <Text style={styles.compactStatLabel}>Sets</Text>
-                <Text style={styles.compactStatValue}>
-                  {sessionState.completedSets}/{sets.length || 3}
-                </Text>
-              </View>
-
-              <View style={styles.compactStatBox}>
-                <Text style={styles.compactStatLabel}>Reps</Text>
-                <Text style={styles.compactStatValue}>
-                  {sessionState.completedReps}
-                </Text>
-              </View>
-
-              <View style={styles.compactStatBox}>
-                <Text style={styles.compactStatLabel}>Nghỉ</Text>
-                <Text style={styles.compactStatValue}>
-                  {sets[Math.max(sessionState.completedSets, 0)]?.restSeconds || 60}s
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.compactCounterRow}>
-              <View style={styles.compactCounterGroup}>
-                <Text style={styles.compactCounterLabel}>Sets</Text>
-
-                <View style={styles.compactControl}>
-                  <TouchableOpacity
-                    style={styles.compactMinusBtn}
-                    onPress={decreaseSet}
-                  >
-                    <MaterialCommunityIcons name="minus" size={18} color={COLORS.primary} />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.compactPlusBtn}
-                    onPress={increaseSet}
-                  >
-                    <MaterialCommunityIcons name="plus" size={18} color={COLORS.surface} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.compactCounterGroup}>
-                <Text style={styles.compactCounterLabel}>Reps</Text>
-
-                <View style={styles.compactControl}>
-                  <TouchableOpacity
-                    style={styles.compactMinusBtn}
-                    onPress={decreaseRep}
-                  >
-                    <MaterialCommunityIcons name="minus" size={18} color={COLORS.primary} />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.compactPlusBtn}
-                    onPress={increaseRep}
-                  >
-                    <MaterialCommunityIcons name="plus" size={18} color={COLORS.surface} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.compactDifficulty}>
-              <View style={styles.compactDifficultyHeader}>
-                <Text style={styles.compactDifficultyTitle}>Độ khó</Text>
-                <Text style={styles.compactDifficultyValue}>
-                  {perceivedDifficulty}/10
-                </Text>
-              </View>
-
-              <View style={styles.compactDifficultyRow}>
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(value => (
-                  <TouchableOpacity
-                    key={value}
-                    style={[
-                      styles.compactDifficultyBtn,
-                      perceivedDifficulty === value && styles.compactDifficultyBtnActive,
-                    ]}
-                    onPress={() => setPerceivedDifficulty(value)}
-                  >
-                    <Text
-                      style={[
-                        styles.compactDifficultyText,
-                        perceivedDifficulty === value && styles.compactDifficultyTextActive,
-                      ]}
-                    >
-                      {value}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.compactActionRow}>
-              <TouchableOpacity
-                style={[
-                  styles.compactActionBtn,
-                  sessionState.isPaused && styles.compactResumeBtn,
-                ]}
-                onPress={togglePause}
-              >
-                <MaterialCommunityIcons
-                  name={sessionState.isPaused ? 'play' : 'pause'}
-                  size={20}
-                  color={COLORS.surface}
-                />
-                <Text style={styles.compactActionText}>
-                  {sessionState.isPaused ? 'Tiếp tục' : 'Tạm dừng'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.compactActionBtn, styles.compactStopBtn]}
-                onPress={stopSession}
-              >
-                <MaterialCommunityIcons name="stop-circle" size={20} color={COLORS.surface} />
-                <Text style={styles.compactActionText}>Dừng</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {!hasStarted && (
-          <View style={styles.buttonSection}>
-            <TouchableOpacity style={styles.startButton} onPress={startSession}>
-              <MaterialCommunityIcons name="play" size={24} color={COLORS.surface} />
-              <Text style={styles.startButtonText}>BẮT ĐẦU TẬP</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Description */}
-        {exercise.description && (
-          <View style={styles.descriptionSection}>
-            <Text style={styles.descriptionTitle}>Hướng dẫn</Text>
-            <Text style={styles.description}>{stripHtml(exercise.description)}</Text>
-          </View>
-        )}
-
-        {/* Equipment Info */}
-        {exercise.equipment && exercise.equipment.length > 0 && (
-          <View style={styles.equipmentSection}>
-            <Text style={styles.equipmentTitle}>Dụng cụ cần thiết</Text>
-            <View style={styles.equipmentList}>
-              {exercise.equipment.map((eq) => (
-                <View key={eq.id} style={styles.equipmentTag}>
-                  <MaterialCommunityIcons name="wrench" size={16} color={COLORS.primary} />
-                  <Text style={styles.equipmentTagText}>{eq.name}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Muscle Groups */}
-        {(exercise.muscles && exercise.muscles.length > 0 || 
-          exercise.muscles_secondary && exercise.muscles_secondary.length > 0) && (
-          <View style={styles.muscleSection}>
-            <Text style={styles.muscleTitle}>Nhóm cơ tác động</Text>
-            
-            {exercise.muscles && exercise.muscles.length > 0 && (
-              <>
-                <Text style={styles.muscleSubtitle}>Nhóm cơ chính</Text>
-                <View style={styles.muscleList}>
-                  {exercise.muscles.map((muscle) => (
-                    <View key={muscle.id} style={styles.muscleTag}>
-                      <Text style={styles.muscleTagText}>{muscle.name_en}</Text>
-                    </View>
-                  ))}
-                </View>
-              </>
-            )}
-
-            {exercise.muscles_secondary && exercise.muscles_secondary.length > 0 && (
-              <>
-                <Text style={styles.muscleSubtitle}>Nhóm cơ phụ</Text>
-                <View style={styles.muscleList}>
-                  {exercise.muscles_secondary.map((muscle) => (
-                    <View key={muscle.id} style={styles.muscleTag}>
-                      <Text style={styles.muscleTagText}>{muscle.name_en}</Text>
-                    </View>
-                  ))}
-                </View>
-              </>
-            )}
-          </View>
-        )}
-
-        <View style={{ height: SPACING.xl }} />
-      </ScrollView>
+      <ExerciseInfo exercise={exercise} />
     </ScreenContainer>
   );
 };
 
 const styles = StyleSheet.create({
-  compactWorkoutCard: {
-    paddingHorizontal: SPACING.md,
-    marginTop: SPACING.lg,
-    marginBottom: SPACING.lg,
-    padding: SPACING.md,
+  /* Image carousel */
+  imageCard: {
     backgroundColor: COLORS.surface,
     borderRadius: BORDER_RADIUS.lg,
-    ...SHADOWS.md,
-  },
-
-  compactTimer: {
-    fontSize: 44,
-    fontWeight: '800',
-    color: COLORS.primary,
-    textAlign: 'center',
-    fontFamily: 'Courier New',
-    marginBottom: SPACING.sm,
-  },
-
-  compactStatsRow: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    marginBottom: SPACING.md,
-  },
-
-  compactStatBox: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    borderRadius: BORDER_RADIUS.md,
-    paddingVertical: SPACING.sm,
-    alignItems: 'center',
-  },
-
-  compactStatLabel: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginBottom: 2,
-  },
-
-  compactStatValue: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.text,
-  },
-
-  compactCounterRow: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-    marginBottom: SPACING.md,
-  },
-
-  compactCounterGroup: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    borderRadius: BORDER_RADIUS.md,
-    padding: SPACING.sm,
-  },
-
-  compactCounterLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.text,
-    textAlign: 'center',
-    marginBottom: SPACING.sm,
-  },
-
-  compactControl: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-  },
-
-  compactMinusBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  compactPlusBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  compactDifficulty: {
-    backgroundColor: COLORS.background,
-    borderRadius: BORDER_RADIUS.md,
-    padding: SPACING.sm,
-    marginBottom: SPACING.md,
-  },
-
-  compactDifficultyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: SPACING.sm,
-  },
-
-  compactDifficultyTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-
-  compactDifficultyValue: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: COLORS.primary,
-  },
-
-  compactDifficultyRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-
-  compactDifficultyBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  compactDifficultyBtnActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-
-  compactDifficultyText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-
-  compactDifficultyTextActive: {
-    color: COLORS.surface,
-  },
-
-  compactActionRow: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-  },
-
-  compactActionBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: SPACING.md,
-    borderRadius: BORDER_RADIUS.md,
-    backgroundColor: COLORS.primary,
-  },
-
-  compactResumeBtn: {
-    backgroundColor: COLORS.success,
-  },
-
-  compactStopBtn: {
-    backgroundColor: COLORS.error,
-  },
-
-  compactActionText: {
-    marginLeft: SPACING.sm,
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.surface,
-  },
-  counterSection: {
-    gap: SPACING.md,
-    marginBottom: SPACING.lg,
-  },
-
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorText: {
-    fontSize: 16,
-    color: COLORS.text,
-    textAlign: 'center',
-  },
-  backButton: {
-    marginTop: SPACING.lg,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    backgroundColor: COLORS.primary,
-    borderRadius: BORDER_RADIUS.md,
-  },
-  backButtonText: {
-    color: COLORS.surface,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.md,
-    paddingBottom: SPACING.lg,
-    backgroundColor: COLORS.primary,
-    borderBottomLeftRadius: BORDER_RADIUS.lg,
-    borderBottomRightRadius: BORDER_RADIUS.lg,
-  },
-  backBtn: {
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  exerciseTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.surface,
-    textAlign: 'center',
-    flex: 1,
-  },
-  imageContainer: {
-    width: '100%',
-    height: 300,
-    backgroundColor: COLORS.background,
-    position: 'relative',
-    marginTop: SPACING.md,
-    borderRadius: BORDER_RADIUS.md,
     overflow: 'hidden',
+    ...SHADOWS.sm,
   },
-  exerciseImage: {
+  image: {
     width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
+    aspectRatio: 4 / 3,
   },
-  noImagePlaceholder: {
-    width: '100%',
-    height: '100%',
+  emptyImage: {
+    aspectRatio: 4 / 3,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
+    gap: SPACING.sm,
   },
-  noImageText: {
-    fontSize: 14,
+  emptyText: {
+    ...TYPOGRAPHY.caption,
     color: COLORS.textMuted,
-    marginTop: SPACING.sm,
   },
-  imageNav: {
-    position: 'absolute',
-    top: '50%',
-    transform: [{ translateY: -12 }],
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  dots: {
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  imageNavLeft: {
-    left: SPACING.md,
-  },
-  imageNavRight: {
-    right: SPACING.md,
-  },
-  imageIndicator: {
-    position: 'absolute',
-    bottom: SPACING.md,
-    right: SPACING.md,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: SPACING.md,
+    gap: SPACING.sm,
     paddingVertical: SPACING.sm,
-    borderRadius: BORDER_RADIUS.md,
   },
-  imageIndicatorText: {
-    color: COLORS.surface,
-    fontSize: 12,
-    fontWeight: '600',
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.border,
   },
-  videoSection: {
+  dotActive: {
+    backgroundColor: COLORS.primary,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+
+  /* Video + info */
+  videoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: SPACING.lg,
+    gap: SPACING.sm,
     marginTop: SPACING.md,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    backgroundColor: COLORS.background,
-    borderRadius: BORDER_RADIUS.md,
-    ...SHADOWS.sm,
+    padding: SPACING.md,
+    backgroundColor: COLORS.primarySoft,
+    borderRadius: BORDER_RADIUS.lg,
   },
   videoText: {
-    marginLeft: SPACING.md,
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.primary,
-  },
-  infoSection: {
-    marginTop: SPACING.lg,
-    paddingVertical: SPACING.md,
-    backgroundColor: COLORS.surface,
-    borderRadius: BORDER_RADIUS.md,
-    ...SHADOWS.sm,
+    ...TYPOGRAPHY.bodyStrong,
+    color: COLORS.primaryDark,
+    flexShrink: 1,
+    minWidth: 0,
   },
   infoRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: SPACING.md,
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
   },
-  infoItem: {
-    alignItems: 'center',
-  },
-  infoLabel: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: SPACING.sm,
-  },
-  infoValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginTop: SPACING.xs,
-  },
-  timerSection: {
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.lg,
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.md,
+
+  /* Workout (timer) card */
+  workoutCard: {
+    marginTop: SPACING.md,
+    padding: SPACING.md,
     backgroundColor: COLORS.surface,
     borderRadius: BORDER_RADIUS.lg,
+    gap: SPACING.md,
     ...SHADOWS.md,
   },
-  timerDisplay: {
-    alignItems: 'center',
-    marginBottom: SPACING.lg,
-  },
-  timerText: {
-    fontSize: 72,
-    fontWeight: '700',
+  timer: {
+    ...TYPOGRAPHY.display,
+    // Đồng hồ cần cỡ lớn hơn thang chữ chuẩn; dùng chữ số đều để không "nhảy" khi đếm.
+    fontSize: TYPOGRAPHY.display.fontSize + 16,
+    lineHeight: TYPOGRAPHY.display.lineHeight + 18,
+    fontVariant: ['tabular-nums'],
     color: COLORS.primary,
-    fontFamily: 'Courier New',
+    textAlign: 'center',
   },
-  setInfoContainer: {
+  pausedBadge: {
+    alignSelf: 'center',
+    marginTop: -SPACING.sm,
+  },
+  statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: SPACING.lg,
-    paddingBottom: SPACING.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    gap: SPACING.sm,
   },
-  setIndicator: {
-    alignItems: 'center',
-  },
-  setLabel: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-  },
-  setNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginTop: SPACING.xs,
-  },
-  restInfo: {
-    alignItems: 'center',
-    backgroundColor: COLORS.background,
-    paddingVertical: SPACING.md,
+  statBox: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: COLORS.surfaceMuted,
     borderRadius: BORDER_RADIUS.md,
+    paddingVertical: SPACING.sm,
+    alignItems: 'center',
   },
-  restLabel: {
-    fontSize: 12,
+  statLabel: {
+    ...TYPOGRAPHY.small,
     color: COLORS.textSecondary,
+    marginBottom: SPACING.xxs,
   },
-  restTime: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: COLORS.primary,
-    marginTop: SPACING.xs,
+  statValue: {
+    ...TYPOGRAPHY.h3,
+    color: COLORS.text,
   },
-  intensitySection: {
-    marginTop: SPACING.lg,
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.md,
+  counterRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm + 4,
+  },
+  counterGroup: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: COLORS.surfaceMuted,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  counterLabel: {
+    ...TYPOGRAPHY.captionStrong,
+    color: COLORS.text,
+    textAlign: 'center',
+  },
+  counterControl: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+  },
+  minusBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  plusBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  difficulty: {
+    backgroundColor: COLORS.surfaceMuted,
     borderRadius: BORDER_RADIUS.md,
-    ...SHADOWS.sm,
+    padding: SPACING.sm,
+    gap: SPACING.sm,
   },
-  intensityLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: SPACING.md,
-  },
-  intensityButtons: {
+  difficultyHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  intensityBtn: {
+  difficultyTitle: {
+    ...TYPOGRAPHY.captionStrong,
+    color: COLORS.text,
+  },
+  difficultyValue: {
+    ...TYPOGRAPHY.captionStrong,
+    color: COLORS.primary,
+  },
+  difficultyRow: {
+    flexDirection: 'row',
+    gap: SPACING.xs,
+  },
+  difficultyBtn: {
     flex: 1,
-    paddingVertical: SPACING.md,
-    marginHorizontal: SPACING.xs,
-    alignItems: 'center',
-    borderRadius: BORDER_RADIUS.md,
+    aspectRatio: 1,
+    maxWidth: 32,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  intensityBtnActive: {
+  difficultyBtnActive: {
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
-  intensityBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
+  difficultyText: {
+    ...TYPOGRAPHY.captionStrong,
     color: COLORS.text,
   },
-  intensityBtnTextActive: {
-    color: COLORS.surface,
+  difficultyTextActive: {
+    color: COLORS.textInverse,
   },
-  buttonSection: {
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.lg,
-    marginBottom: SPACING.lg,
+  actionRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm + 4,
+  },
+  actionBtn: {
+    flex: 1,
   },
   startButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: SPACING.md,
-    backgroundColor: COLORS.primary,
-    borderRadius: BORDER_RADIUS.lg,
-    ...SHADOWS.md,
+    marginTop: SPACING.md,
   },
-  startButtonText: {
-    marginLeft: SPACING.md,
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.surface,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: SPACING.lg,
-    marginBottom: SPACING.md,
-    backgroundColor: COLORS.primary,
-    borderRadius: BORDER_RADIUS.md,
-    ...SHADOWS.md,
-  },
-  resumeButton: {
-    backgroundColor: COLORS.success,
-  },
-  stopButton: {
-    backgroundColor: COLORS.error,
-  },
-  actionButtonText: {
-    marginLeft: SPACING.md,
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.surface,
-  },
-  descriptionSection: {
-    marginBottom: SPACING.lg,
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.md,
+
+  /* Static info cards */
+  card: {
+    marginTop: SPACING.md,
+    padding: SPACING.md,
     backgroundColor: COLORS.surface,
-    borderRadius: BORDER_RADIUS.md,
+    borderRadius: BORDER_RADIUS.lg,
+    gap: SPACING.sm,
     ...SHADOWS.sm,
   },
-  descriptionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
+  cardTitle: {
+    ...TYPOGRAPHY.h3,
     color: COLORS.text,
-    marginBottom: SPACING.md,
+  },
+  subTitle: {
+    ...TYPOGRAPHY.captionStrong,
+    color: COLORS.textSecondary,
   },
   description: {
-    fontSize: 14,
-    lineHeight: 20,
+    ...TYPOGRAPHY.body,
     color: COLORS.textSecondary,
   },
-  equipmentSection: {
-    marginBottom: SPACING.lg,
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.md,
-    backgroundColor: COLORS.surface,
-    borderRadius: BORDER_RADIUS.md,
-    ...SHADOWS.sm,
-  },
-  equipmentTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: SPACING.md,
-  },
-  equipmentList: {
+  tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-  },
-  equipmentTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    marginRight: SPACING.md,
-    marginBottom: SPACING.md,
-    backgroundColor: COLORS.background,
-    borderRadius: BORDER_RADIUS.md,
-  },
-  equipmentTagText: {
-    marginLeft: SPACING.sm,
-    fontSize: 12,
-    fontWeight: '500',
-    color: COLORS.text,
-  },
-  muscleSection: {
-    marginBottom: SPACING.lg,
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.md,
-    backgroundColor: COLORS.surface,
-    borderRadius: BORDER_RADIUS.md,
-    ...SHADOWS.sm,
-  },
-  muscleTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: SPACING.md,
-  },
-  muscleSubtitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginTop: SPACING.md,
-    marginBottom: SPACING.md,
-  },
-  muscleList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  muscleTag: {
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    marginRight: SPACING.md,
-    marginBottom: SPACING.md,
-    backgroundColor: COLORS.primary,
-    borderRadius: BORDER_RADIUS.md,
-  },
-  secondaryMuscle: {
-    backgroundColor: COLORS.background,
-  },
-  muscleTagText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.surface,
-  },
-  imageWrapper: {
-    width: width,
-    height: 300,
-    backgroundColor: COLORS.background,
-    marginTop: SPACING.lg,
-  },
-
-  image: {
-    width: width,
-    height: 300,
-    resizeMode: 'contain',
-  },
-
-  emptyImage: {
-    width: width,
-    height: 300,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  emptyText: {
-    marginTop: 8,
-    color: COLORS.textSecondary,
+    gap: SPACING.sm,
   },
 });
