@@ -16,34 +16,40 @@ The goal of this project is to provide a simple and efficient tool for users to 
 
 ## 2. Features
 
-- User Authentication
-  - Login and registration
-  - Secure authentication via backend API
+- **Dashboard**: today's menu energy and macros, Google Health activity, readiness score and today's workout.
+- **Google Health integration**
+  - OAuth connection; sync of steps, calories, active minutes and sleep
+  - 7-day charts and comparison with WHO physical-activity guidelines, with cited sources
+- **Adaptive workout**
+  - Fatigue, Recovery, Performance and Readiness scores with a breakdown of how each is computed
+  - Plan adjustment preview (increase / maintain / reduce intensity / light session / rest) before applying
+  - Exercise substitution: pick a reason and choose from ranked, similar alternatives
+- **Food analysis**
+  - Multi-dish recognition from one photo (Gemini), with nutrition per dish and a meal total
+  - Nutrition analysis from a pasted recipe
+- **AI assistant (RAG chatbot)**: answers grounded in WHO, Vietnam Ministry of Health and other official documents, with citations, a "verified" badge and a disclaimer
+- **Meal planning**: weekly menu, suggestions, add or remove dishes
+- **History**: meals eaten and workout sessions
+- **User profile**: body metrics, activity level, goal, dietary restrictions
 
-- Nutrition Tracking
-  - Log daily meals and food intake
-  - Track calories and macronutrients (protein, carbs, fat)
+📖 Vietnamese user guide with screenshots: [docs/huong-dan-su-dung.md](docs/huong-dan-su-dung.md)
 
-- Meal Management
-  - Add, edit, and delete meals
-  - View meal history
+---
 
-- Analytics & Insights
-  - Daily nutrition summary
-  - Track eating habits over time
- 
-- Workout Tracking (In Progress)
-  - Create and manage workout plans
-  - Track daily exercises and progress
-  - Support basic workout logging
+## Screenshots
 
-- User Profile
-  - Manage personal information
-  - Set basic nutrition goals
-
-- Mobile Experience
-  - Responsive mobile UI
-  - Smooth navigation between screens
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/dashboard.png" width="220" /><br/>Dashboard</td>
+    <td align="center"><img src="docs/screenshots/health-who.png" width="220" /><br/>Google Health vs WHO</td>
+    <td align="center"><img src="docs/screenshots/workout-plan.png" width="220" /><br/>Adaptive workout</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/workout-substitute.png" width="220" /><br/>Exercise substitution</td>
+    <td align="center"><img src="docs/screenshots/food-dishes.png" width="220" /><br/>Multi-dish recognition</td>
+    <td align="center"><img src="docs/screenshots/chat-answer.png" width="220" /><br/>AI assistant with citations</td>
+  </tr>
+</table>
 
 ---
 
@@ -51,7 +57,7 @@ The goal of this project is to provide a simple and efficient tool for users to 
 
 - Mobile: React Native (Expo)
 - Language: TypeScript / JavaScript
-- Navigation: React Navigation / Expo Router
+- Navigation: React Navigation (native stack + bottom tabs)
 - State Management: React state (hooks)
 - API Communication: REST API (Axios / Fetch)
 - Backend Integration: Node.js backend system
@@ -60,21 +66,14 @@ The goal of this project is to provide a simple and efficient tool for users to 
 
 ## 4. Project Status
 
-This project is currently under active development.
-
-Core features such as authentication, meal tracking, and basic analytics have been implemented. The system is being extended with a workout tracking module to provide a more comprehensive fitness solution.
+This project is under active development as part of a graduation thesis. Authentication, meal tracking, workout plans, Google Health integration, adaptive workouts, multi-dish food recognition and the RAG chatbot are implemented on mobile.
 
 ---
 
 ## 5. Planned Features
 
-- Advanced workout tracking and progress analytics
-- Personalized workout recommendations
-- Integration between nutrition and workout data
-- Advanced analytics and charts
-- Nutrition recommendations based on user data
-- Image-based food input (AI integration)
-- Improved UI/UX design and animations
+- Larger knowledge base (30–50 documents) and a more accurate intent router for the chatbot
+- Evaluation of chatbot answers (Ragas), multi-dish recognition and recommendations
 - Offline support and data caching
 - Push notifications for reminders
 - Unit and integration testing
@@ -134,16 +133,26 @@ npm install
 
 ### 8.4 Configure environment variables
 
-Create a .env file:
+Create a `.env` file in the project root:
 
 ```bash
-API_BASE_URL=http://localhost:8080
+# Backend API (use your computer's LAN IP when testing on a real phone)
+EXPO_PUBLIC_API_BASE_URL=http://192.168.1.100:3000/api
+# Ingredient nutrition lookup service (search-service)
+EXPO_PUBLIC_SEARCH_SERVICE_URL=http://192.168.1.100:8000
+# Optional: run with built-in sample data, without a backend
+# EXPO_PUBLIC_DEMO=1
 ```
+
+For Google Health, the backend needs `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI` (pointing to `/api/google-health/callback`). The app passes its own deep link (`nutritionsystem://` or `exp://` in Expo Go) so the browser returns to the app after consent.
 
 ### 8.5 Run the application
 
 ```bash
-npm start
+npm start          # Expo dev server (scan the QR code with Expo Go)
+npm run android    # Android emulator / device
+npm run ios        # iOS simulator
+npm run web        # Browser preview
 ```
 
 ## 9. Deployment
