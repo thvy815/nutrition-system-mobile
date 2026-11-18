@@ -1,117 +1,123 @@
-import { API_BASE_URL } from '../constants/api';
+import { API_BASE_URL, API_TIMEOUT_MS, DEMO_MODE } from '../constants/api';
 import { getToken } from './token';
 
 export type ApiError = {
   message: string;
   status?: number;
+  /** Mã lỗi backend trả về, vd: GOOGLE_NOT_CONNECTED, GEMINI_UNREACHABLE. */
+  code?: string;
+  data?: any;
 };
+
+type RequestOptions = Omit<RequestInit, 'body'> & { body?: any; timeoutMs?: number };
+
+export function isApiError(error: unknown): error is ApiError {
+  return !!error && typeof error === 'object' && 'message' in error;
+}
+
+/** Thông báo lỗi thân thiện cho người dùng. */
+export function getErrorMessage(error: unknown, fallback = 'Có lỗi xảy ra. Vui lòng thử lại.') {
+  if (isApiError(error)) {
+    if (error.status === 0) return 'Không kết nối được máy chủ. Kiểm tra mạng hoặc địa chỉ API.';
+    if (error.status === 401) return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+    if (error.status === 429) return 'Bạn thao tác quá nhanh, vui lòng thử lại sau ít phút.';
+    return error.message || fallback;
+  }
+  return fallback;
+}
 
 async function request<T>(
   endpoint: string,
-  options: Omit<RequestInit, 'body'> & { body?: any } = {} // Đổi body thành any để nhận FormData
+  options: RequestOptions = {}
 ): Promise<{ data: T; status: number }> {
-  const { body, ...fetchOptions } = options;
-  const url = endpoint.startsWith('http') 
-    ? endpoint 
-    : `${API_BASE_URL}${endpoint}`;
+  const { body, timeoutMs = API_TIMEOUT_MS, ...fetchOptions } = options;
+  const method = (fetchOptions.method || 'GET').toUpperCase();
+
+  if (DEMO_MODE) {
+    // Nạp lười để bundle production không kéo theo dữ liệu mẫu.
+    const { demoRequest } = require('./demo');
+    return demoRequest(method, endpoint, body) as Promise<{ data: T; status: number }>;
+  }
+
+  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
 
   const headers: Record<string, string> = {
+    Accept: 'application/json',
     ...((fetchOptions.headers as Record<string, string>) || {}),
   };
 
-  // Tự động lấy token từ auth service và thêm vào headers
   const token = await getToken();
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    headers.Authorization = `Bearer ${token}`;
   }
 
-  const config: RequestInit = {
-    ...fetchOptions,
-  };
+  const config: RequestInit = { ...fetchOptions, method };
 
-  // KIỂM TRA BODY
   if (body instanceof FormData) {
-    // Nếu là FormData: 
-    // 1. KHÔNG SET Content-Type (để Fetch tự điền cùng boundary)
-    // 2. KHÔNG stringify body
+    // Không set Content-Type để fetch tự thêm boundary.
     config.body = body;
-    // Đảm bảo không có Content-Type: application/json bị ghi đè vào
     delete headers['Content-Type'];
-  } else if (body && typeof body === 'object') {
-    // Nếu là Object bình thường: Set JSON
+  } else if (body !== undefined && body !== null) {
     headers['Content-Type'] = 'application/json';
     config.body = JSON.stringify(body);
   }
 
   config.headers = headers;
 
-  console.log('===== API REQUEST =====');
-  console.log('URL:', url);
-  console.log('METHOD:', config.method);
-  console.log('BODY:', body);
-  console.log('HAS TOKEN:', !!token);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  config.signal = controller.signal;
+
+  const startedAt = Date.now();
+  let response: Response;
 
   try {
-  const response = await fetch(url, config);
+    response = await fetch(url, config);
+  } catch (error: any) {
+    clearTimeout(timer);
+    const aborted = error?.name === 'AbortError';
+    if (__DEV__) console.log(`[api] ${method} ${endpoint} ✗ ${aborted ? 'timeout' : error?.message}`);
+    const apiError: ApiError = {
+      message: aborted
+        ? 'Máy chủ phản hồi quá lâu. Vui lòng thử lại.'
+        : 'Không kết nối được máy chủ. Kiểm tra mạng hoặc địa chỉ API.',
+      status: 0,
+    };
+    throw apiError;
+  }
 
-  console.log('===== API RESPONSE =====');
-  console.log('URL:', url);
-  console.log('STATUS:', response.status);
+  clearTimeout(timer);
 
   const data = await response.json().catch(() => ({}));
 
-  console.log('DATA:', data);
+  if (__DEV__) {
+    console.log(`[api] ${method} ${endpoint} → ${response.status} (${Date.now() - startedAt}ms)`);
+  }
 
   if (!response.ok) {
-    const error: ApiError = {
+    const apiError: ApiError = {
       message: data?.message || 'Có lỗi xảy ra',
       status: response.status,
+      code: data?.code,
+      data,
     };
-
-    console.log('===== API BAD RESPONSE =====');
-    console.log(error);
-
-    throw error;
+    throw apiError;
   }
 
   return { data: data as T, status: response.status };
-} catch (error: any) {
-    console.log('===== API FETCH ERROR =====');
-    console.log('URL:', url);
-    console.log('MESSAGE:', error?.message);
-    console.log('ERROR:', error);
-
-    throw error;
-  }
 }
 
 export const api = {
-  get: <T>(endpoint: string) =>
-    request<T>(endpoint, {
-      method: 'GET',
-    }),
+  get: <T>(endpoint: string, opts?: { timeoutMs?: number }) =>
+    request<T>(endpoint, { method: 'GET', ...opts }),
 
-  post: <T>(endpoint: string, body?: object) =>
-    request<T>(endpoint, {
-      method: 'POST',
-      body,
-    }),
+  post: <T>(endpoint: string, body?: object, opts?: { timeoutMs?: number }) =>
+    request<T>(endpoint, { method: 'POST', body, ...opts }),
 
-  put: <T>(endpoint: string, body?: object) =>
-    request<T>(endpoint, {
-      method: 'PUT',
-      body,
-    }),
+  put: <T>(endpoint: string, body?: object) => request<T>(endpoint, { method: 'PUT', body }),
 
   delete: <T>(endpoint: string, body?: object) =>
-    request<T>(endpoint, {
-      method: 'DELETE',
-      body,
-    }),
+    request<T>(endpoint, { method: 'DELETE', body }),
 
-  patch: <T>(endpoint: string, body?: object) =>
-    request<T>(endpoint, {
-      method: 'PATCH',
-      body,
-    }),
+  patch: <T>(endpoint: string, body?: object) => request<T>(endpoint, { method: 'PATCH', body }),
 };

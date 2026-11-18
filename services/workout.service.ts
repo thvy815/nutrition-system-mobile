@@ -4,13 +4,19 @@
  */
 
 import { api } from './api';
-import { 
-  WorkoutPlanResponse, 
-  WorkoutPlan, 
+import {
+  WorkoutPlanResponse,
+  WorkoutPlan,
   WorkoutSessionResponse,
-  WorkoutSessionData,
-  WorkoutDay
+  WorkoutDay,
+  TrainingState,
+  AdaptResult,
+  AlternativesResult,
+  ReplaceResult,
+  SubstitutionReason,
 } from '../types/workout';
+
+type Wrapped<T> = { success: boolean; data: T; message?: string };
 
 export const workoutService = {
   // ===================================================== 
@@ -35,7 +41,7 @@ export const workoutService = {
   //* Mark a workout day as completed
   async completeDay(day: number) {
     try { 
-      const { data } = await api.post( '/workout-plan/complete-day', { day } ); 
+      const { data } = await api.patch('/workout-plan/complete-day', { day }); 
       return data; 
     } catch (error) { 
       console.error('completeDay error:', error); 
@@ -46,7 +52,7 @@ export const workoutService = {
   //* Skip a workout day
   async skipDay(day: number) {
     try { 
-      const { data } = await api.post( '/workout-plan/skip-day', { day } ); 
+      const { data } = await api.patch('/workout-plan/skip-day', { day }); 
       return data; 
     } catch (error) { 
       console.error('skipDay error:', error); 
@@ -122,4 +128,51 @@ export const workoutService = {
       throw error; 
     }
   },
-}
+
+  // =====================================================
+  // ADAPTIVE WORKOUT
+  // =====================================================
+
+  /** Fatigue / Recovery / Performance / Readiness (0–10). sync=true đồng bộ Google Health trước. */
+  async getTrainingState(sync = false): Promise<TrainingState> {
+    const { data } = await api.get<Wrapped<TrainingState>>(
+      `/workout-plan/training-state${sync ? '?sync=true' : ''}`
+    );
+    return data.data;
+  },
+
+  /** Điều chỉnh plan theo trạng thái. dryRun=true chỉ xem trước, không lưu. */
+  async adaptPlan(options: { dryRun?: boolean; sync?: boolean } = {}): Promise<AdaptResult> {
+    const qs = new URLSearchParams();
+    if (options.dryRun) qs.set('dryRun', 'true');
+    if (options.sync) qs.set('sync', 'true');
+    const q = qs.toString();
+    const { data } = await api.post<Wrapped<AdaptResult>>(`/workout-plan/adapt${q ? `?${q}` : ''}`);
+    return data.data;
+  },
+
+  async getAlternatives(
+    day: number,
+    exerciseId: number,
+    reason: SubstitutionReason,
+    limit = 5
+  ): Promise<AlternativesResult> {
+    const { data } = await api.get<Wrapped<AlternativesResult>>(
+      `/workout-plan/day/${day}/exercises/${exerciseId}/alternatives?limit=${limit}&reason=${reason}`
+    );
+    return data.data;
+  },
+
+  async replaceExercise(
+    day: number,
+    exerciseId: number,
+    newExerciseId: number,
+    reason: SubstitutionReason
+  ): Promise<ReplaceResult> {
+    const { data } = await api.patch<Wrapped<ReplaceResult>>(
+      `/workout-plan/day/${day}/exercises/${exerciseId}/replace`,
+      { newExerciseId, reason }
+    );
+    return data.data;
+  },
+};

@@ -4,7 +4,7 @@ export type ChatSessionMessage = {
   role: ChatRole;
   content: string;
   imageUrl?: string | null;
-  dataSource?: 'system_db' | 'ai_generated' | 'hybrid';
+  dataSource?: ChatDataSource;
   hasDisclaimer?: boolean;
 };
 
@@ -28,6 +28,26 @@ export type ChatSessionsResponse = {
   };
 };
 
+export type ChatCitation = {
+  id: string; // "S1"
+  title: string;
+  org?: string;
+  year?: string | number;
+  url?: string;
+  section?: string;
+  doc_id?: string;
+};
+
+export type ChatGrounding = {
+  checked: boolean;
+  action: 'unchecked' | 'passed' | 'regenerated' | 'stripped' | 'refused';
+  passed?: boolean;
+  supportRatio?: number;
+  warnings?: number;
+} | null;
+
+export type ChatDataSource = 'system_db' | 'ai_generated' | 'hybrid' | 'rule';
+
 export type SendChatResponse = {
   success: boolean;
   data: {
@@ -35,11 +55,13 @@ export type SendChatResponse = {
     message: {
       role: 'model';
       content: string;
-      disclaimer?: string;
+      disclaimer?: string | null;
       hasDisclaimer?: boolean;
-      dataSource?: 'system_db' | 'ai_generated' | 'hybrid';
+      dataSource?: ChatDataSource;
+      citations?: ChatCitation[];
+      grounding?: ChatGrounding;
     };
-    toolsUsed?: string[];
+    toolsUsed?: { name: string; args?: unknown; success?: boolean }[];
   };
 };
 
@@ -48,4 +70,11 @@ export type UIChatMessage = {
   text: string;
   isUser: boolean;
   timestamp: Date;
+  citations?: ChatCitation[];
+  disclaimer?: string | null;
+  grounding?: ChatGrounding;
+  dataSource?: ChatDataSource;
+  /** Tin nhắn lỗi: hiển thị nút gửi lại. */
+  failed?: boolean;
+  retryText?: string;
 };

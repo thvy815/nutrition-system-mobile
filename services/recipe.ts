@@ -1,4 +1,5 @@
 import { api } from './api';
+import { AI_TIMEOUT_MS, SEARCH_SERVICE_URL } from '../constants/api';
 import type { Meal } from '../types';
 export type Nutrition = {
   calories: number;
@@ -90,12 +91,8 @@ export const getMappingIngredients = async (
       ingredients: ingredients.map(inObj => ({ name: inObj.name })),
       topK: topK
     };
-    console.log("vo mapping")
-    const res = await api.post<MappingResponse>(
-      'http://192.168.31.206:8000/search_batch',
-      body,
-    );
-    const allMappedIngredients: MappedIngredient[] = res.data.results.flatMap(
+    const res = await api.post<MappingResponse>(`${SEARCH_SERVICE_URL}/search_batch`, body);
+    const allMappedIngredients: MappedIngredient[] = res.data.results.map(
       (batch) => batch.results[0]
     );
     return allMappedIngredients;
@@ -135,7 +132,9 @@ export const findIngredientsByAi = async (
 
     const res = await api.post<{ ingredients: Ingredient[] }>(
       '/recipes/ai/extract-ingredients',
-      body    );
+      body,
+      { timeoutMs: AI_TIMEOUT_MS }
+    );
 
     return res.data.ingredients;
   } catch (error: any) {
@@ -151,6 +150,7 @@ export const getIngredientsAndInstructionsInAi = async (
   try {
     const res = await api.get<Recipe>(
       `/recipes/ai/recommendations/${encodeURIComponent(foodName)}`,
+      { timeoutMs: AI_TIMEOUT_MS }
     );
     return res.data;
   } catch (error: any) {
@@ -163,6 +163,37 @@ export const getIngredientsAndInstructionsInAi = async (
     return null;
   }
 };
+
+function buildImageForm(imageAsset: any) {
+  const formData = new FormData();
+  const uri: string = imageAsset.uri;
+  const name = imageAsset.fileName || uri.split('/').pop() || 'photo.jpg';
+  const type = imageAsset.mimeType || 'image/jpeg';
+
+  if (imageAsset.file) {
+    // Web: expo-image-picker trả về File thật.
+    formData.append('foodImage', imageAsset.file, name);
+  } else {
+    formData.append('foodImage', { uri, name, type } as any);
+  }
+  return formData;
+}
+
+/**
+ * Nhận diện NHIỀU món trong một ảnh (Gemini 2.5 Flash).
+ * Backend trả về { foodName: string[] } (không bọc success/data).
+ */
+export async function detectFoods(imageAsset: any): Promise<string[]> {
+  const res = await api.post<{ foodName?: string[] | string; foods?: string[] }>(
+    '/recipes/ai/detect-food',
+    buildImageForm(imageAsset),
+    { timeoutMs: AI_TIMEOUT_MS }
+  );
+  const raw = res.data.foods ?? res.data.foodName ?? [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  // Loại bỏ trùng / rỗng, giữ thứ tự.
+  return Array.from(new Set(list.map((n) => String(n).trim()).filter(Boolean)));
+}
 
 export async function detectRecipe(imageAsset: any, token: string): Promise<RecipeDetectedResponse> {
   const formData = new FormData();

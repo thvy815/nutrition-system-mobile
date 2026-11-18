@@ -1,4 +1,5 @@
 import { api } from './api';
+import { AI_TIMEOUT_MS } from '../constants/api';
 import type {
   ChatSession,
   ChatSessionsResponse,
@@ -34,7 +35,9 @@ export async function sendChatMessage(payload: {
   message: string;
   sessionId?: string | null;
 }): Promise<SendChatResponse['data']> {
-  const { data } = await api.post<SendChatResponse>('/chat/message/v2', payload);
+  const { data } = await api.post<SendChatResponse>('/chat/message/v2', payload, {
+    timeoutMs: AI_TIMEOUT_MS,
+  });
 
   if (!data.success) {
     throw new Error('Failed to send chat message');

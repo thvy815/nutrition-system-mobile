@@ -62,11 +62,5 @@ export interface ChatMessage {
 }
 
 // Workout types
-export type {
-  DayType,
-  WorkoutLevel,
-  WorkoutDay,
-  WorkoutPlan,
-  WorkoutPlanResponse,
-  WorkoutSession,
-} from './workout';
+export type * from './workout';
+export type * from './health';
