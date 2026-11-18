@@ -1,24 +1,92 @@
-import React from 'react';
-import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  RefreshControl,
+  ViewStyle,
+  StyleProp,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SPACING } from '../constants/theme';
+import { BOTTOM_SPACER, COLORS, SPACING } from '../constants/theme';
 
 interface ScreenContainerProps {
   children: React.ReactNode;
+  /** Nội dung cuộn được (mặc định true). */
   scrollable?: boolean;
   keyboardAvoiding?: boolean;
+  /** Bật kéo để làm mới khi truyền hàm này. */
+  onRefresh?: () => Promise<unknown> | void;
+  /** Phần cố định phía trên (không cuộn), vd: ScreenHeader. */
+  header?: React.ReactNode;
+  /** Màn hình con trong stack không có tab bar -> cần chừa safe area dưới. */
+  withBottomInset?: boolean;
+  /** Bỏ padding ngang mặc định. */
+  noPadding?: boolean;
+  contentStyle?: StyleProp<ViewStyle>;
 }
 
 export function ScreenContainer({
   children,
   scrollable = true,
   keyboardAvoiding = false,
+  onRefresh,
+  header,
+  withBottomInset = false,
+  noPadding = false,
+  contentStyle,
 }: ScreenContainerProps) {
   const insets = useSafeAreaInsets();
+  const [refreshing, setRefreshing] = useState(false);
 
-  const content = (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      <View style={styles.content}>{children}</View>
+  const handleRefresh = useCallback(async () => {
+    if (!onRefresh) return;
+    try {
+      setRefreshing(true);
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [onRefresh]);
+
+  const padding = noPadding ? null : styles.padded;
+  const bottom = withBottomInset ? insets.bottom : 0;
+
+  const body = scrollable ? (
+    <ScrollView
+      style={styles.flex}
+      contentContainerStyle={[
+        padding,
+        { paddingBottom: BOTTOM_SPACER + bottom },
+        contentStyle,
+      ]}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        ) : undefined
+      }
+    >
+      {children}
+    </ScrollView>
+  ) : (
+    <View style={[styles.flex, padding, { paddingBottom: bottom }, contentStyle]}>
+      {children}
+    </View>
+  );
+
+  const screen = (
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {header}
+      {body}
     </View>
   );
 
@@ -27,37 +95,13 @@ export function ScreenContainer({
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-        {scrollable ? (
-          <ScrollView
-            style={styles.flex}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            {content}
-          </ScrollView>
-        ) : (
-          content
-        )}
+        {screen}
       </KeyboardAvoidingView>
     );
   }
 
-  if (scrollable) {
-    return (
-      <ScrollView
-        style={styles.flex}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {content}
-      </ScrollView>
-    );
-  }
-
-  return content;
+  return screen;
 }
 
 const styles = StyleSheet.create({
@@ -66,13 +110,10 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: COLORS.background,
   },
-  content: {
-    flex: 1,
-    padding: SPACING.md,
-  },
-  scrollContent: {
-    flexGrow: 1,
+  padded: {
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.sm,
   },
 });

@@ -9,11 +9,11 @@ interface TagProps {
 }
 
 const VARIANT_COLORS = {
-  primary: { bg: '#D1FAE5', text: COLORS.primary },
-  secondary: { bg: '#DBEAFE', text: COLORS.secondary },
-  accent: { bg: '#FEF3C7', text: COLORS.accent },
-  success: { bg: '#D1FAE5', text: COLORS.success },
-  neutral: { bg: COLORS.border, text: COLORS.textSecondary },
+  primary: { bg: COLORS.primarySoft, text: COLORS.primaryDark },
+  secondary: { bg: COLORS.secondarySoft, text: COLORS.secondary },
+  accent: { bg: COLORS.accentSoft, text: '#B45309' },
+  success: { bg: COLORS.successSoft, text: COLORS.primaryDark },
+  neutral: { bg: COLORS.surfaceMuted, text: COLORS.textSecondary },
 };
 
 export function Tag({ label, variant = 'primary' }: TagProps) {
@@ -54,11 +54,12 @@ const styles = StyleSheet.create({
   tag: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
-    borderRadius: BORDER_RADIUS.sm,
+    borderRadius: BORDER_RADIUS.full,
     alignSelf: 'flex-start',
   },
   text: {
     fontSize: 12,
     fontWeight: '600',
+    lineHeight: 16,
   },
 });
