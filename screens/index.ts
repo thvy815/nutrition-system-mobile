@@ -9,3 +9,4 @@ export { DayDetailScreen } from './DayDetailScreen';
 export { ExerciseDetailScreen } from './ExerciseDetailScreen';
 export { WorkoutSessionScreen } from './WorkoutSessionScreen';
 export { HistoryScreen } from './HistoryScreen';
+export { HealthScreen } from './HealthScreen';

@@ -1,36 +1,60 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Platform,
-  ActivityIndicator,
   ScrollView,
-  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Markdown from 'react-native-markdown-display';
 
-import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { Badge, BottomSheet, IconButton, ScreenHeader } from '../components';
+import { BORDER_RADIUS, COLORS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import {
+  deleteChatSession,
   getChatSessionDetail,
   getChatSessions,
   sendChatMessage,
-  deleteChatSession
 } from '../services/chat.service';
-import type { ChatSession, UIChatMessage } from '../types/chat';
-import Markdown from 'react-native-markdown-display';
+import { getErrorMessage, isApiError } from '../services/api';
+import type { ChatCitation, ChatSession, UIChatMessage } from '../types/chat';
 
 const WELCOME_MESSAGE: UIChatMessage = {
   id: 'welcome',
-  text: 'Xin chào! Mình là trợ lý sức khỏe AI. Bạn có thể hỏi mình về thực đơn, calories, bài tập, lịch tập hoặc thói quen lành mạnh hôm nay.',
+  text:
+    'Xin chào! Mình là trợ lý sức khỏe AI. Bạn có thể hỏi về **thực đơn, calo, bài tập, lịch tập** hoặc khuyến nghị vận động của WHO, Bộ Y tế.',
   isUser: false,
   timestamp: new Date(),
 };
+
+const SUGGESTIONS = [
+  'Người trưởng thành nên vận động bao nhiêu phút mỗi tuần?',
+  'Hôm nay mình nên ăn gì để giảm cân?',
+  'Lịch tập hôm nay của mình là gì?',
+  'Một ngày nên ăn bao nhiêu muối?',
+];
+
+const REFERENCES_HEADER = 'Nguồn tham khảo:';
+
+function hostOf(url: string) {
+  const m = url.match(/^https?:\/\/([^/?#]+)/i);
+  return m ? m[1].replace(/^www\./, '') : url;
+}
+
+/** Bỏ khối "Nguồn tham khảo:" ở cuối khi đã hiển thị nguồn dạng chip. */
+function stripReferences(text: string) {
+  const idx = text.lastIndexOf(REFERENCES_HEADER);
+  return idx > 0 ? text.slice(0, idx).trimEnd() : text;
+}
 
 export function AIChatbotScreen() {
   const insets = useSafeAreaInsets();
@@ -38,268 +62,274 @@ export function AIChatbotScreen() {
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-
   const [messages, setMessages] = useState<UIChatMessage[]>([WELCOME_MESSAGE]);
   const [inputText, setInputText] = useState('');
 
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [sending, setSending] = useState(false);
+  const [activeCitation, setActiveCitation] = useState<ChatCitation | null>(null);
 
-  useEffect(() => {
-    loadSessions();
-  }, []);
-
-  useEffect(() => {
-    setTimeout(() => {
-      listRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-  }, [messages]);
-
-  async function loadSessions() {
+  const loadSessions = useCallback(async () => {
     try {
       setLoadingSessions(true);
-      const result = await getChatSessions();
-      setSessions(result);
+      setSessions(await getChatSessions());
     } catch (error) {
-      console.error('loadSessions error:', error);
+      if (__DEV__) console.warn('loadSessions error:', error);
     } finally {
       setLoadingSessions(false);
     }
-  }
+  }, []);
 
-  async function handleSelectSession(sessionId: string) {
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  const scrollToEnd = useCallback(() => {
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+  }, []);
+
+  const handleSelectSession = useCallback(async (sessionId: string) => {
     try {
       setSelectedSessionId(sessionId);
       setLoadingDetail(true);
-
       const session = await getChatSessionDetail(sessionId);
-
-      const mappedMessages: UIChatMessage[] = session.messages.map((item, index) => ({
+      const mapped: UIChatMessage[] = session.messages.map((item, index) => ({
         id: `${session._id}-${index}`,
         text: item.content,
         isUser: item.role === 'user',
         timestamp: new Date(),
+        dataSource: item.dataSource,
       }));
-
-      setMessages(mappedMessages.length > 0 ? mappedMessages : [WELCOME_MESSAGE]);
+      setMessages(mapped.length ? mapped : [WELCOME_MESSAGE]);
     } catch (error) {
-      console.error('handleSelectSession error:', error);
+      Alert.alert('Lỗi', getErrorMessage(error, 'Không tải được hội thoại'));
     } finally {
       setLoadingDetail(false);
     }
-  }
+  }, []);
 
-  async function handleDeleteSession(sessionId: string) {
-    Alert.alert(
-    'Xóa đoạn chat',
-    'Bạn có chắc chắn muốn xóa đoạn chat này không?',
-    [
-      {
-        text: 'Hủy',
-        style: 'cancel',
-      },
-      {
-        text: 'Xóa',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteChatSession(sessionId);
-
-            setSessions(prev => prev.filter(item => item._id !== sessionId));
-
-            if (selectedSessionId === sessionId) {
-              setSelectedSessionId(null);
-              setMessages([WELCOME_MESSAGE]);
+  const handleDeleteSession = useCallback(
+    (sessionId: string) => {
+      Alert.alert('Xóa đoạn chat', 'Bạn có chắc chắn muốn xóa đoạn chat này không?', [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteChatSession(sessionId);
+              setSessions((prev) => prev.filter((s) => s._id !== sessionId));
+              if (selectedSessionId === sessionId) {
+                setSelectedSessionId(null);
+                setMessages([WELCOME_MESSAGE]);
+              }
+            } catch (error) {
+              Alert.alert('Lỗi', getErrorMessage(error));
             }
-          } catch (error) {
-            console.error('delete session error:', error);
-          }
-        }
-      }
-    ])
-  }
+          },
+        },
+      ]);
+    },
+    [selectedSessionId]
+  );
 
-  function handleNewChat() {
+  const handleNewChat = useCallback(() => {
     setSelectedSessionId(null);
     setMessages([WELCOME_MESSAGE]);
     setInputText('');
-  }
+  }, []);
 
-  async function handleSend() {
-    const content = inputText.trim();
-    if (!content || sending) return;
+  const send = useCallback(
+    async (raw: string) => {
+      const content = raw.trim();
+      if (!content || sending) return;
 
-    const userMessage: UIChatMessage = {
-      id: `user-${Date.now()}`,
-      text: content,
-      isUser: true,
-      timestamp: new Date(),
-    };
+      setMessages((prev) => [
+        ...prev.filter((m) => !m.failed),
+        { id: `user-${Date.now()}`, text: content, isUser: true, timestamp: new Date() },
+      ]);
+      setInputText('');
+      setSending(true);
 
-    setMessages((prev) => [...prev, userMessage]);
-    setInputText('');
-    setSending(true);
+      try {
+        const result = await sendChatMessage({ message: content, sessionId: selectedSessionId });
 
-    try {
-      const result = await sendChatMessage({
-        message: content,
-        sessionId: selectedSessionId,
-      });
+        if (!selectedSessionId) {
+          setSelectedSessionId(result.sessionId);
+          loadSessions();
+        }
 
-      if (!selectedSessionId) {
-        setSelectedSessionId(result.sessionId);
-        loadSessions();
+        const citations = result.message.citations ?? [];
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `ai-${Date.now()}`,
+            text: citations.length ? stripReferences(result.message.content) : result.message.content,
+            isUser: false,
+            timestamp: new Date(),
+            citations,
+            disclaimer: result.message.disclaimer,
+            grounding: result.message.grounding,
+            dataSource: result.message.dataSource,
+          },
+        ]);
+      } catch (error) {
+        const unreachable = isApiError(error) && error.code === 'GEMINI_UNREACHABLE';
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            text: unreachable
+              ? 'Máy chủ AI đang bận hoặc không kết nối được. Bạn thử gửi lại sau ít phút nhé.'
+              : getErrorMessage(error, 'Xin lỗi, mình chưa xử lý được tin nhắn này.'),
+            isUser: false,
+            timestamp: new Date(),
+            failed: true,
+            retryText: content,
+          },
+        ]);
+      } finally {
+        setSending(false);
       }
+    },
+    [sending, selectedSessionId, loadSessions]
+  );
 
-      const aiMessage: UIChatMessage = {
-        id: `ai-${Date.now()}`,
-        text: result.message.content,
-        isUser: false,
-        timestamp: new Date(),
-      };
+  const handleRetry = useCallback(
+    (text: string) => {
+      // Bỏ tin nhắn user cuối (sẽ được gửi lại) + tin lỗi.
+      setMessages((prev) => {
+        const next = prev.filter((m) => !m.failed);
+        const last = next[next.length - 1];
+        return last?.isUser && last.text === text ? next.slice(0, -1) : next;
+      });
+      send(text);
+    },
+    [send]
+  );
 
-      setMessages((prev) => [...prev, aiMessage]);
-    } catch (error) {
-      console.error('send message error:', error);
+  const renderItem = useCallback(
+    ({ item }: { item: UIChatMessage }) => (
+      <MessageBubble message={item} onCitation={setActiveCitation} onRetry={handleRetry} />
+    ),
+    [handleRetry]
+  );
 
-      const errorMessage: UIChatMessage = {
-        id: `error-${Date.now()}`,
-        text: 'Xin lỗi, hiện tại mình chưa xử lý được tin nhắn này. Bạn thử lại sau nhé.',
-        isUser: false,
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setSending(false);
-    }
-  }
+  const showSuggestions = messages.length === 1 && messages[0].id === 'welcome' && !sending;
 
   return (
     <KeyboardAvoidingView
       style={[styles.container, { paddingTop: insets.top }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View>
-            <View style={styles.headerTitleRow}>
-              <Ionicons name="chatbubbles" size={24} color={COLORS.primary} />
-              <Text style={styles.title}>Trợ lý sức khỏe AI</Text>
-            </View>
+      <ScreenHeader
+        title="Trợ lý AI"
+        subtitle="Dựa trên tài liệu WHO, Bộ Y tế, Viện Dinh dưỡng"
+        right={
+          <IconButton
+            icon="add"
+            onPress={handleNewChat}
+            color={COLORS.textInverse}
+            background={COLORS.primary}
+            accessibilityLabel="Cuộc trò chuyện mới"
+          />
+        }
+      />
 
-            <Text style={styles.subtitle}>
-              Dinh dưỡng, tập luyện & thói quen
-            </Text>
-          </View>
-
-          <TouchableOpacity style={styles.newChatButton} onPress={handleNewChat}>
-            <Ionicons name="add" size={20} color="#FFF" />
-          </TouchableOpacity>
-        </View>
-
+      <View style={styles.sessionBar}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.sessionList}
         >
-          {loadingSessions ? (
-            <ActivityIndicator size="small" color={COLORS.primary} />
-          ) : (
-            <>
-              <TouchableOpacity
-                style={[
-                  styles.newChatSessionChip,
-                  !selectedSessionId && styles.sessionChipActive,
-                ]}
-                onPress={handleNewChat}
-              >
-                <Text
-                  style={[
-                    styles.sessionChipText,
-                    !selectedSessionId && styles.sessionChipTextActive,
-                  ]}
-                >
-                  Chat mới
-                </Text>
-              </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sessionChip, !selectedSessionId && styles.sessionChipActive]}
+            onPress={handleNewChat}
+          >
+            <Ionicons
+              name="sparkles"
+              size={14}
+              color={!selectedSessionId ? COLORS.textInverse : COLORS.primary}
+            />
+            <Text style={[styles.sessionText, !selectedSessionId && styles.sessionTextActive]}>
+              Chat mới
+            </Text>
+          </TouchableOpacity>
 
-              {sessions.map((session) => {
-                const active = selectedSessionId === session._id;
+          {loadingSessions && !sessions.length ? (
+            <ActivityIndicator size="small" color={COLORS.primary} style={styles.sessionLoading} />
+          ) : null}
 
-                return (
-                  <View
-                    key={session._id}
-                    style={[
-                      styles.sessionChip,
-                      active && styles.sessionChipActive,
-                    ]}
+          {sessions.map((s) => {
+            const active = selectedSessionId === s._id;
+            return (
+              <View key={s._id} style={[styles.sessionChip, active && styles.sessionChipActive]}>
+                <TouchableOpacity onPress={() => handleSelectSession(s._id)} style={styles.sessionTitleBtn}>
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.sessionText, active && styles.sessionTextActive]}
                   >
-                    <TouchableOpacity
-                      style={styles.sessionTitleButton}
-                      onPress={() => handleSelectSession(session._id)}
-                    >
-                      <Text
-                        numberOfLines={1}
-                        style={[
-                          styles.sessionChipText,
-                          active && styles.sessionChipTextActive,
-                        ]}
-                      >
-                        {session.title || 'Cuộc trò chuyện'}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={() => handleDeleteSession(session._id)}
-                      style={styles.deleteSessionButton}
-                    >
-                      <Ionicons
-                        name="close"
-                        size={14}
-                        color={active ? '#FFF' : COLORS.textMuted}
-                      />
-                    </TouchableOpacity>
-                </View>
-                );
-              })}
-            </>
-          )}
+                    {s.title || 'Cuộc trò chuyện'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleDeleteSession(s._id)}
+                  hitSlop={8}
+                  accessibilityLabel="Xóa đoạn chat"
+                >
+                  <Ionicons name="close" size={14} color={active ? COLORS.textInverse : COLORS.textMuted} />
+                </TouchableOpacity>
+              </View>
+            );
+          })}
         </ScrollView>
       </View>
 
       {loadingDetail ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Đang tải hội thoại...</Text>
+          <Text style={styles.mutedText}>Đang tải hội thoại...</Text>
         </View>
       ) : (
         <FlatList
           ref={listRef}
           data={messages}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <MessageBubble message={item} />}
+          renderItem={renderItem}
           contentContainerStyle={styles.messageList}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          onContentSizeChange={scrollToEnd}
+          removeClippedSubviews={Platform.OS === 'android'}
+          initialNumToRender={12}
+          windowSize={9}
+          ListFooterComponent={
+            <>
+              {showSuggestions ? (
+                <View style={styles.suggestions}>
+                  {SUGGESTIONS.map((q) => (
+                    <TouchableOpacity key={q} style={styles.suggestion} onPress={() => send(q)}>
+                      <Ionicons name="chatbubble-ellipses-outline" size={14} color={COLORS.primaryDark} />
+                      <Text style={styles.suggestionText} numberOfLines={2}>
+                        {q}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
+              {sending ? (
+                <View style={styles.typing}>
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                  <Text style={styles.mutedText}>AI đang tra cứu tài liệu & trả lời...</Text>
+                </View>
+              ) : null}
+            </>
+          }
         />
       )}
 
-      {sending && (
-        <View style={styles.typingRow}>
-          <ActivityIndicator size="small" color={COLORS.primary} />
-          <Text style={styles.typingText}>AI đang trả lời...</Text>
-        </View>
-      )}
-
-      <View style={styles.disclaimerBox}>
-        <Text style={styles.disclaimerText}>
-          ⚠️ Chatbot chỉ mang tính tham khảo về dinh dưỡng & luyện tập,
-          không thay thế tư vấn y tế chuyên môn.
-        </Text>
-      </View>
-
-      <View style={[styles.inputRow, { paddingBottom: insets.bottom + SPACING.md }]}>
+      <View style={[styles.inputBar, { paddingBottom: SPACING.sm + (Platform.OS === 'ios' ? 0 : 4) }]}>
         <TextInput
           style={styles.input}
           placeholder="Hỏi về dinh dưỡng, tập luyện..."
@@ -309,479 +339,303 @@ export function AIChatbotScreen() {
           multiline
           maxLength={500}
           editable={!sending}
-          onSubmitEditing={handleSend}
         />
-
         <TouchableOpacity
-          style={[
-            styles.sendButton,
-            (!inputText.trim() || sending) && styles.sendButtonDisabled,
-          ]}
-          onPress={handleSend}
+          style={[styles.sendButton, (!inputText.trim() || sending) && styles.sendDisabled]}
+          onPress={() => send(inputText)}
           disabled={!inputText.trim() || sending}
           activeOpacity={0.8}
+          accessibilityLabel="Gửi"
         >
-          <Ionicons name="send" size={22} color="#FFF" />
+          <Ionicons name="send" size={20} color={COLORS.textInverse} />
         </TouchableOpacity>
       </View>
+
+      <BottomSheet
+        visible={!!activeCitation}
+        onClose={() => setActiveCitation(null)}
+        title={activeCitation?.title ?? ''}
+        subtitle={[activeCitation?.org, activeCitation?.year].filter(Boolean).join(' · ')}
+      >
+        {activeCitation ? (
+          <View style={styles.citeSheet}>
+            <Badge label={`Mã nguồn ${activeCitation.id}`} tone="info" />
+            {activeCitation.section ? (
+              <Text style={styles.citeSection}>Mục: {activeCitation.section}</Text>
+            ) : null}
+            {activeCitation.url ? (
+              <TouchableOpacity
+                style={styles.citeLink}
+                onPress={() => Linking.openURL(activeCitation.url!)}
+              >
+                <Ionicons name="open-outline" size={16} color={COLORS.secondary} />
+                <View style={styles.citationBody}>
+                  <Text style={styles.citeLinkText}>Mở tài liệu gốc</Text>
+                  <Text style={styles.citationMeta} numberOfLines={1}>
+                    {hostOf(activeCitation.url)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.mutedText}>Tài liệu này không có đường dẫn công khai.</Text>
+            )}
+          </View>
+        ) : null}
+      </BottomSheet>
     </KeyboardAvoidingView>
   );
 }
 
-function MessageBubble({ message }: { message: UIChatMessage }) {
-  const formattedText = message.text.replace(/\\n/g, '\n');
+/* ------------------------------------------------------------------ */
+
+const markdownStyles = {
+  body: { ...TYPOGRAPHY.body, color: COLORS.text },
+  strong: { fontWeight: '700' as const, color: COLORS.text },
+  bullet_list: { marginVertical: 4 },
+  ordered_list: { marginVertical: 4 },
+  list_item: { marginBottom: 4 },
+  paragraph: { marginTop: 0, marginBottom: 6 },
+  heading3: { ...TYPOGRAPHY.h3, marginVertical: 4 },
+  link: { color: COLORS.secondary },
+};
+
+const GROUNDED_ACTIONS = new Set(['passed', 'regenerated', 'stripped']);
+
+const MessageBubble = memo(function MessageBubble({
+  message,
+  onCitation,
+  onRetry,
+}: {
+  message: UIChatMessage;
+  onCitation: (c: ChatCitation) => void;
+  onRetry: (text: string) => void;
+}) {
+  const text = message.text.replace(/\\n/g, '\n');
+
+  if (message.isUser) {
+    return (
+      <View style={[styles.bubble, styles.userBubble]}>
+        <Text style={styles.userText}>{text}</Text>
+      </View>
+    );
+  }
+
+  const verified = message.grounding?.checked && GROUNDED_ACTIONS.has(message.grounding.action);
+  const hasMeta = verified || message.dataSource === 'hybrid' || !!message.citations?.length;
 
   return (
-    <View
-      style={[
-        styles.bubble,
-        message.isUser ? styles.userBubble : styles.aiBubble,
-      ]}
-    >
-      {message.isUser ? (
-        <Text style={[styles.bubbleText, styles.userBubbleText]}>
-          {formattedText}
-        </Text>
-      ) : (
-        <Markdown
-          style={{
-            body: {
-              fontSize: 16,
-              lineHeight: 22,
-              color: COLORS.text,
-            },
-            strong: {
-              fontWeight: '700',
-              color: COLORS.text,
-            },
-            bullet_list: {
-              marginVertical: 4,
-            },
-            ordered_list: {
-              marginVertical: 4,
-            },
-            list_item: {
-              marginBottom: 4,
-            },
-          }}
-        >
-          {formattedText}
-        </Markdown>
-      )}
+    <View style={styles.aiRow}>
+      <View style={styles.avatar}>
+        <Ionicons name="leaf" size={14} color={COLORS.primaryDark} />
+      </View>
+      <View style={[styles.bubble, styles.aiBubble, message.failed && styles.failedBubble]}>
+        <Markdown style={markdownStyles}>{text}</Markdown>
+
+        {message.failed && message.retryText ? (
+          <TouchableOpacity style={styles.retry} onPress={() => onRetry(message.retryText!)}>
+            <Ionicons name="refresh" size={14} color={COLORS.error} />
+            <Text style={styles.retryText}>Gửi lại</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {hasMeta ? (
+          <View style={styles.metaRow}>
+            {verified ? <Badge label="Đã kiểm chứng" tone="success" icon="shield-checkmark" /> : null}
+            {message.dataSource === 'hybrid' ? (
+              <Badge label="Dữ liệu hệ thống" tone="info" icon="server-outline" />
+            ) : null}
+          </View>
+        ) : null}
+
+        {message.citations?.length ? (
+          <View style={styles.citations}>
+            <Text style={styles.citationsTitle}>Nguồn tham khảo</Text>
+            {message.citations.map((c) => (
+              <TouchableOpacity
+                key={c.id}
+                style={styles.citation}
+                onPress={() => onCitation(c)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.citationId}>{c.id}</Text>
+                <View style={styles.citationBody}>
+                  <Text style={styles.citationTitle} numberOfLines={1}>
+                    {c.title}
+                  </Text>
+                  {c.org || c.year ? (
+                    <Text style={styles.citationMeta} numberOfLines={1}>
+                      {[c.org, c.year].filter(Boolean).join(' · ')}
+                    </Text>
+                  ) : null}
+                </View>
+                <Ionicons name="chevron-forward" size={14} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+
+        {message.disclaimer ? (
+          <View style={styles.disclaimer}>
+            <Ionicons name="information-circle-outline" size={14} color={COLORS.textMuted} />
+            <Text style={styles.disclaimerText}>{message.disclaimer}</Text>
+          </View>
+        ) : null}
+      </View>
     </View>
   );
-}
+});
+
+/* ------------------------------------------------------------------ */
 
 const styles = StyleSheet.create({
-  newChatSessionChip: {
-    height: 38,
-    minWidth: 90,
-    paddingHorizontal: SPACING.md,
-    borderRadius: 20,
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  disclaimerBox: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 6,
-    backgroundColor: '#FFF7E6',
-    borderTopWidth: 1,
-    borderTopColor: '#FFE0A3',
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
 
-  disclaimerText: {
-    fontSize: 12,
-    color: '#8A6D3B',
-    textAlign: 'center',
-    lineHeight: 16,
-  },
-  
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-
-  header: {
-    padding: SPACING.md,
-    paddingBottom: SPACING.sm,
-    backgroundColor: COLORS.surface,
-    borderBottomWidth: 1,
+  sessionBar: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: COLORS.border,
+    paddingBottom: SPACING.sm,
   },
-
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-
-  headerTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-  },
-
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-
-  subtitle: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginTop: SPACING.xs,
-  },
-
-  newChatButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  sessionList: {
-    paddingTop: SPACING.md,
-    gap: SPACING.sm,
-    alignItems: 'center',
-  },
-
+  sessionList: { paddingHorizontal: SPACING.md, gap: SPACING.sm, alignItems: 'center' },
+  sessionLoading: { marginHorizontal: SPACING.sm },
   sessionChip: {
-    maxWidth: 180,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: SPACING.md,
-    paddingRight: 6,
-    paddingVertical: SPACING.sm,
-    borderRadius: 20,
-    backgroundColor: COLORS.background,
+    gap: 6,
+    height: 34,
+    maxWidth: 200,
+    paddingHorizontal: SPACING.sm + 4,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
-    gap: 6,
   },
+  sessionChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  sessionTitleBtn: { flexShrink: 1 },
+  sessionText: { ...TYPOGRAPHY.captionStrong, color: COLORS.text },
+  sessionTextActive: { color: COLORS.textInverse },
 
-  sessionTitleButton: {
-    maxWidth: 130,
-  },
+  loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: SPACING.sm },
+  mutedText: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
 
-  deleteSessionButton: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  messageList: { padding: SPACING.md, paddingBottom: SPACING.lg, gap: SPACING.sm + 4 },
 
-  sessionChipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-
-  sessionChipText: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-  },
-
-  sessionChipTextActive: {
-    color: '#FFF',
-    fontWeight: '600',
-  },
-
-  messageList: {
-    padding: SPACING.md,
-    paddingBottom: SPACING.lg,
-  },
-
-  bubble: {
-    maxWidth: '85%',
-    padding: SPACING.md,
-    borderRadius: 16,
-    marginBottom: SPACING.sm,
-  },
-
+  bubble: { maxWidth: '85%', borderRadius: BORDER_RADIUS.lg, paddingHorizontal: 14, paddingVertical: 10 },
   userBubble: {
     alignSelf: 'flex-end',
     backgroundColor: COLORS.primary,
     borderBottomRightRadius: 4,
   },
-
+  userText: { ...TYPOGRAPHY.body, color: COLORS.textInverse },
+  aiRow: { flexDirection: 'row', alignItems: 'flex-end', gap: SPACING.sm },
+  avatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLORS.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   aiBubble: {
-    alignSelf: 'flex-start',
+    flexShrink: 1,
     backgroundColor: COLORS.surface,
     borderBottomLeftRadius: 4,
     ...SHADOWS.sm,
   },
+  failedBubble: { backgroundColor: COLORS.errorSoft },
+  retry: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  retryText: { ...TYPOGRAPHY.captionStrong, color: COLORS.error },
 
-  bubbleText: {
-    fontSize: 16,
-    lineHeight: 22,
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: SPACING.sm },
+  citations: {
+    marginTop: SPACING.sm,
+    paddingTop: SPACING.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: COLORS.border,
+    gap: 6,
   },
-
-  userBubbleText: {
-    color: '#FFF',
-  },
-
-  aiBubbleText: {
-    color: COLORS.text,
-  },
-
-  typingRow: {
+  citationsTitle: { ...TYPOGRAPHY.small, color: COLORS.textMuted, textTransform: 'uppercase' },
+  citation: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.md,
-    paddingBottom: SPACING.sm,
     gap: SPACING.sm,
+    paddingVertical: 6,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: BORDER_RADIUS.sm,
+    backgroundColor: COLORS.background,
   },
-
-  typingText: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
+  citationId: {
+    ...TYPOGRAPHY.small,
+    fontWeight: '700',
+    color: COLORS.secondary,
+    backgroundColor: COLORS.infoSoft,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    overflow: 'hidden',
   },
+  citationBody: { flex: 1, minWidth: 0 },
+  citationTitle: { ...TYPOGRAPHY.caption, color: COLORS.text },
+  citationMeta: { ...TYPOGRAPHY.small, color: COLORS.textMuted },
+  disclaimer: { flexDirection: 'row', gap: 4, marginTop: SPACING.sm },
+  disclaimerText: { ...TYPOGRAPHY.small, color: COLORS.textMuted, flex: 1 },
 
-  inputRow: {
+  suggestions: { gap: SPACING.sm, marginTop: SPACING.sm },
+  suggestion: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    padding: SPACING.sm + 4,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.primarySoft,
+  },
+  suggestionText: { ...TYPOGRAPHY.caption, color: COLORS.text, flex: 1 },
+  typing: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.sm },
+
+  inputBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    padding: SPACING.md,
-    backgroundColor: COLORS.surface,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
     gap: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: COLORS.border,
   },
-
   input: {
     flex: 1,
-    backgroundColor: COLORS.background,
-    borderRadius: 24,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    fontSize: 16,
+    minHeight: 44,
+    maxHeight: 120,
+    ...TYPOGRAPHY.body,
     color: COLORS.text,
-    maxHeight: 100,
+    backgroundColor: COLORS.background,
+    borderRadius: 22,
+    paddingHorizontal: SPACING.md,
+    paddingTop: 11,
+    paddingBottom: 11,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-
   sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  sendDisabled: { opacity: 0.45 },
 
-  sendButtonDisabled: {
-    backgroundColor: COLORS.textMuted,
-    opacity: 0.6,
-  },
-
-  loadingBox: {
-    flex: 1,
+  citeSheet: { gap: SPACING.sm + 4 },
+  citeSection: { ...TYPOGRAPHY.body, color: COLORS.text },
+  citeLink: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: SPACING.sm,
+    padding: SPACING.sm + 4,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.infoSoft,
   },
-
-  loadingText: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-  },
+  citeLinkText: { ...TYPOGRAPHY.captionStrong, color: COLORS.secondary },
 });
-// import React, { useState } from 'react';
-// import {
-//   View,
-//   Text,
-//   StyleSheet,
-//   TextInput,
-//   TouchableOpacity,
-//   FlatList,
-//   KeyboardAvoidingView,
-//   Platform,
-// } from 'react-native';
-// import { Ionicons } from '@expo/vector-icons';
-// import { useSafeAreaInsets } from 'react-native-safe-area-context';
-// import { COLORS, SPACING, SHADOWS } from '../constants/theme';
-// import { MOCK_CHAT_MESSAGES } from '../constants/mockData';
-// import type { ChatMessage } from '../types';
-
-// export function AIChatbotScreen() {
-//   const insets = useSafeAreaInsets();
-//   const [messages, setMessages] = useState<ChatMessage[]>(MOCK_CHAT_MESSAGES);
-//   const [inputText, setInputText] = useState('');
-
-//   const handleSend = () => {
-//     if (!inputText.trim()) return;
-//     const userMessage: ChatMessage = {
-//       id: Date.now().toString(),
-//       text: inputText.trim(),
-//       isUser: true,
-//       timestamp: new Date(),
-//     };
-//     setMessages((prev) => [...prev, userMessage]);
-//     setInputText('');
-
-//     // Mock AI response
-//     setTimeout(() => {
-//       const aiMessage: ChatMessage = {
-//         id: (Date.now() + 1).toString(),
-//         text: 'Tôi có thể hỗ trợ bạn về dinh dưỡng, tập luyện và thói quen lành mạnh. Bạn muốn tìm hiểu thêm về điều gì?',
-//         isUser: false,
-//         timestamp: new Date(),
-//       };
-//       setMessages((prev) => [...prev, aiMessage]);
-//     }, 800);
-//   };
-
-//   return (
-//     <KeyboardAvoidingView
-//       style={[styles.container, { paddingTop: insets.top }]}
-//       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-//       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-//     >
-//       <View style={styles.header}>
-//         <Ionicons name="chatbubbles" size={24} color={COLORS.primary} />
-//         <Text style={styles.title}>Trợ lý sức khỏe AI</Text>
-//         <Text style={styles.subtitle}>Dinh dưỡng, tập luyện & thói quen</Text>
-//       </View>
-
-//       <FlatList
-//         data={messages}
-//         keyExtractor={(item) => item.id}
-//         renderItem={({ item }) => <MessageBubble message={item} />}
-//         contentContainerStyle={styles.messageList}
-//         showsVerticalScrollIndicator={false}
-//       />
-
-//       <View style={[styles.inputRow, { paddingBottom: insets.bottom + SPACING.md }]}>
-//         <TextInput
-//           style={styles.input}
-//           placeholder="Hỏi về dinh dưỡng, tập luyện..."
-//           placeholderTextColor={COLORS.textMuted}
-//           value={inputText}
-//           onChangeText={setInputText}
-//           multiline
-//           maxLength={500}
-//           onSubmitEditing={handleSend}
-//         />
-//         <TouchableOpacity
-//           style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
-//           onPress={handleSend}
-//           disabled={!inputText.trim()}
-//           activeOpacity={0.8}
-//         >
-//           <Ionicons name="send" size={22} color="#FFF" />
-//         </TouchableOpacity>
-//       </View>
-//     </KeyboardAvoidingView>
-//   );
-// }
-
-// function MessageBubble({ message }: { message: ChatMessage }) {
-//   return (
-//     <View
-//       style={[
-//         styles.bubble,
-//         message.isUser ? styles.userBubble : styles.aiBubble,
-//       ]}
-//     >
-//       <Text
-//         style={[
-//           styles.bubbleText,
-//           message.isUser ? styles.userBubbleText : styles.aiBubbleText,
-//         ]}
-//       >
-//         {message.text}
-//       </Text>
-//     </View>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: {
-//     flex: 1,
-//     backgroundColor: COLORS.background,
-//   },
-//   header: {
-//     padding: SPACING.md,
-//     paddingBottom: SPACING.sm,
-//     backgroundColor: COLORS.surface,
-//     borderBottomWidth: 1,
-//     borderBottomColor: COLORS.border,
-//   },
-//   title: {
-//     fontSize: 22,
-//     fontWeight: '700',
-//     color: COLORS.text,
-//     marginTop: SPACING.xs,
-//   },
-//   subtitle: {
-//     fontSize: 14,
-//     color: COLORS.textSecondary,
-//     marginTop: SPACING.xs,
-//   },
-//   messageList: {
-//     padding: SPACING.md,
-//     paddingBottom: SPACING.lg,
-//   },
-//   bubble: {
-//     maxWidth: '85%',
-//     padding: SPACING.md,
-//     borderRadius: 16,
-//     marginBottom: SPACING.sm,
-//   },
-//   userBubble: {
-//     alignSelf: 'flex-end',
-//     backgroundColor: COLORS.primary,
-//     borderBottomRightRadius: 4,
-//   },
-//   aiBubble: {
-//     alignSelf: 'flex-start',
-//     backgroundColor: COLORS.surface,
-//     borderBottomLeftRadius: 4,
-//     ...SHADOWS.sm,
-//   },
-//   bubbleText: {
-//     fontSize: 16,
-//     lineHeight: 22,
-//   },
-//   userBubbleText: {
-//     color: '#FFF',
-//   },
-//   aiBubbleText: {
-//     color: COLORS.text,
-//   },
-//   inputRow: {
-//     flexDirection: 'row',
-//     alignItems: 'flex-end',
-//     padding: SPACING.md,
-//     backgroundColor: COLORS.surface,
-//     borderTopWidth: 1,
-//     borderTopColor: COLORS.border,
-//     gap: SPACING.sm,
-//   },
-//   input: {
-//     flex: 1,
-//     backgroundColor: COLORS.background,
-//     borderRadius: 24,
-//     paddingHorizontal: SPACING.md,
-//     paddingVertical: SPACING.sm,
-//     fontSize: 16,
-//     color: COLORS.text,
-//     maxHeight: 100,
-//   },
-//   sendButton: {
-//     width: 48,
-//     height: 48,
-//     borderRadius: 24,
-//     backgroundColor: COLORS.primary,
-//     alignItems: 'center',
-//     justifyContent: 'center',
-//   },
-//   sendButtonDisabled: {
-//     backgroundColor: COLORS.textMuted,
-//     opacity: 0.6,
-//   },
-// });

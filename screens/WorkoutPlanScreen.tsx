@@ -1,335 +1,335 @@
-import React, { useState } from 'react';
-import {
-  View,
-  ScrollView,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-  RefreshControl,
-  TouchableOpacity,
-  Image,
-  Dimensions,
-} from 'react-native';
-import { useWorkout } from '../contexts/WorkoutContext';
-import { ScreenContainer } from '../components/ScreenContainer';
-import { COLORS, SPACING, SHADOWS } from '../constants/theme';
-import { DAY_NAMES, WorkoutDay } from '../types/workout';
+import React, { memo, useCallback, useMemo, useState } from 'react';
+import { Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const WORKOUT_IMAGE =
-  'https://plus.unsplash.com/premium_photo-1664910764486-bed06a30a71b?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D';
+import { useWorkout } from '../contexts/WorkoutContext';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  ScreenContainer,
+  ScreenHeader,
+  SectionHeader,
+} from '../components';
+import { ACTION_META, AdaptPlanSheet, TrainingStateCard } from '../components/workout';
+import { BORDER_RADIUS, COLORS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { AdaptResult, DAY_NAMES, WorkoutDay } from '../types/workout';
 
+const WORKOUT_IMAGE =
+  'https://plus.unsplash.com/premium_photo-1664910764486-bed06a30a71b?q=60&w=240&auto=format&fit=crop';
 const REST_IMAGE =
-  'https://plus.unsplash.com/premium_photo-1674675646818-01d7a7bae64c?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8dGhpJUUxJUJCJTgxbnxlbnwwfHwwfHx8MA%3D%3D';
+  'https://plus.unsplash.com/premium_photo-1674675646818-01d7a7bae64c?w=240&auto=format&fit=crop&q=60';
+
+const FOCUS_LABEL: Record<string, string> = {
+  push: 'Đẩy (ngực, vai, tay sau)',
+  pull: 'Kéo (lưng, tay trước)',
+  legs: 'Chân',
+  upper: 'Thân trên',
+  lower: 'Thân dưới',
+  full_body_push: 'Toàn thân – đẩy',
+  full_body_pull: 'Toàn thân – kéo',
+  full_body_legs: 'Toàn thân – chân',
+  recovery: 'Phục hồi',
+};
 
 function getVNDateOnly(date: string | Date) {
-  return new Date(date).toLocaleDateString('en-CA', {
+  return new Date(date).toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+}
+
+function formatShortDate(date: string) {
+  return new Date(date).toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
     timeZone: 'Asia/Ho_Chi_Minh',
   });
 }
 
 export const WorkoutPlanScreen = ({ navigation }: any) => {
-  const { plan, loading, error, fetchPlan } = useWorkout();
-  const [refreshing, setRefreshing] = useState(false);
+  const {
+    plan,
+    loading,
+    error,
+    fetchPlan,
+    trainingState,
+    trainingStateLoading,
+    fetchTrainingState,
+    replacePlan,
+  } = useWorkout();
+  const [adaptOpen, setAdaptOpen] = useState(false);
 
   const todayVN = getVNDateOnly(new Date());
+  const currentDay = useMemo(
+    () => plan?.days?.find((d) => getVNDateOnly(d.date) === todayVN)?.day ?? 1,
+    [plan, todayVN]
+  );
 
-  const currentDay =
-    plan?.days?.find(d => getVNDateOnly(d.date) === todayVN)?.day ?? 1;
+  const progress = useMemo(() => {
+    const workoutDays = plan?.days?.filter((d) => d.type === 'workout') ?? [];
+    return {
+      total: workoutDays.length,
+      done: workoutDays.filter((d) => d.completed).length,
+    };
+  }, [plan]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchPlan();
-    setRefreshing(false);
-  };
+  const onRefresh = useCallback(async () => {
+    await Promise.all([fetchPlan(), fetchTrainingState(true)]);
+  }, [fetchPlan, fetchTrainingState]);
 
-  const handleDayPress = (dayNumber: number) => {
-    navigation?.navigate('DayDetail', { dayNumber });
-  };
+  const handleDayPress = useCallback(
+    (dayNumber: number) => navigation?.navigate('DayDetail', { dayNumber }),
+    [navigation]
+  );
 
-  const handleStartPress = (dayNumber: number) => {
-    navigation?.navigate('DayDetail', { dayNumber });
-  };
+  const handleApplied = useCallback(
+    (result: AdaptResult) => {
+      if (result.plan) replacePlan(result.plan);
+      else fetchPlan();
+      fetchTrainingState();
+      const meta = ACTION_META[result.decision.action];
+      Alert.alert(
+        'Đã cập nhật kế hoạch',
+        `${meta?.label ?? 'Điều chỉnh'}: ${result.changes.length} ngày được thay đổi.`
+      );
+    },
+    [replacePlan, fetchPlan, fetchTrainingState]
+  );
 
-  // Loading
+  const header = (
+    <ScreenHeader
+      title="Tập luyện"
+      subtitle={
+        plan
+          ? `Tuần ${plan.currentWeek} · ${formatShortDate(plan.weekStartDate)} – ${formatShortDate(plan.weekEndDate)}`
+          : 'Kế hoạch tuần của bạn'
+      }
+    />
+  );
+
   if (loading && !plan) {
     return (
-      <ScreenContainer>
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.text}>Đang tải kế hoạch...</Text>
-        </View>
+      <ScreenContainer header={header} scrollable={false}>
+        <LoadingState message="Đang tải kế hoạch..." />
       </ScreenContainer>
     );
   }
 
-  // Error
-   if (error) {
+  if (error && !plan) {
     return (
-      <ScreenContainer>
-        <View style={styles.center}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={onRefresh}>
-            <Text style={styles.retryText}>Thử lại</Text>
-          </TouchableOpacity>
-        </View>
+      <ScreenContainer header={header} scrollable={false}>
+        <ErrorState message={error} onRetry={onRefresh} />
       </ScreenContainer>
     );
   }
 
-  // Empty
-  if (!plan || !plan.days) {
+  if (!plan || !plan.days?.length) {
     return (
-      <ScreenContainer>
-        <View style={styles.center}>
-          <Text style={styles.text}>Không có kế hoạch</Text>
-        </View>
+      <ScreenContainer header={header} scrollable={false}>
+        <EmptyState
+          icon="barbell-outline"
+          title="Chưa có kế hoạch tập"
+          message="Hoàn thiện hồ sơ để hệ thống tạo kế hoạch tập phù hợp cho bạn."
+          actionLabel="Tải lại"
+          onAction={onRefresh}
+        />
       </ScreenContainer>
     );
   }
 
   return (
-    <ScreenContainer>
-      <ScrollView
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
-        {/* Header */}
-        <View>
-          <Text style={styles.title}>Kế hoạch tập luyện</Text>
-          <Text style={styles.subtitle}>Tuần của bạn</Text>
-        </View>
+    <ScreenContainer header={header} onRefresh={onRefresh}>
+      <TrainingStateCard
+        state={trainingState}
+        loading={trainingStateLoading}
+        onAdapt={() => setAdaptOpen(true)}
+      />
 
-        {/* List */}
-        <View style={styles.list}>
-          {plan.days.map((day: WorkoutDay, index: number) => (
-            <DayItem
-              key={day.day}
-              day={day}
-              index={index}
-              planLength={plan.days.length}
-              currentDay={currentDay}
-              isCurrentDay={day.day === currentDay}
-              onPress={() => handleDayPress(day.day)}
-              onStart={() => handleStartPress(day.day)}
-            />
-          ))}
-        </View>
+      <View style={styles.summaryRow}>
+        <SummaryItem icon="checkmark-done" label="Hoàn thành" value={`${progress.done}/${progress.total}`} />
+        <SummaryItem icon="flame-outline" label="Mục tiêu tuần" value={`${plan.weeklyTargetCalories ?? 0} kcal`} />
+      </View>
 
-        <View style={{ height: 40 }} />
-      </ScrollView>
+      <SectionHeader title="Lịch tuần này" icon="calendar-outline" />
+
+      <View>
+        {plan.days.map((day, index) => (
+          <DayItem
+            key={day.day}
+            day={day}
+            isLast={index === plan.days.length - 1}
+            currentDay={currentDay}
+            onPress={handleDayPress}
+          />
+        ))}
+      </View>
+
+      <AdaptPlanSheet
+        visible={adaptOpen}
+        onClose={() => setAdaptOpen(false)}
+        onApplied={handleApplied}
+      />
     </ScreenContainer>
   );
 };
 
-const DayItem = ({
-  day,
-  index,
-  planLength,
-  isCurrentDay,
-  onPress,
-  onStart,
-  currentDay,
-}: any) => {
-  const isRest = day.type === 'rest';
-  const isPast = day.day < currentDay;
-  const statusIcon = day.completed ? 'checkmark-circle' 
-    : day.skipped ? 'close-circle' 
-    : isCurrentDay ? 'play-circle'
-    : isPast ? 'alert-circle' 
-    : 'ellipse-outline';
+function SummaryItem({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }) {
+  return (
+    <View style={styles.summaryItem}>
+      <Ionicons name={icon} size={18} color={COLORS.primary} />
+      <View style={styles.flex1}>
+        <Text style={styles.summaryLabel}>{label}</Text>
+        <Text style={styles.summaryValue} numberOfLines={1}>
+          {value}
+        </Text>
+      </View>
+    </View>
+  );
+}
 
-  const statusColor = day.completed ? COLORS.success 
-    : day.skipped ? COLORS.error 
-    : isCurrentDay ? COLORS.primary : COLORS.textMuted;
+const DayItem = memo(function DayItem({
+  day,
+  isLast,
+  currentDay,
+  onPress,
+}: {
+  day: WorkoutDay;
+  isLast: boolean;
+  currentDay: number;
+  onPress: (day: number) => void;
+}) {
+  const isRest = day.type === 'rest';
+  const isCurrent = day.day === currentDay;
+  const isPast = day.day < currentDay;
+
+  const status = day.completed
+    ? { icon: 'checkmark-circle' as const, color: COLORS.success, label: 'Đã xong' }
+    : day.skipped
+      ? { icon: 'close-circle' as const, color: COLORS.error, label: 'Bỏ qua' }
+      : isCurrent
+        ? { icon: 'play-circle' as const, color: COLORS.primary, label: 'Hôm nay' }
+        : isPast
+          ? { icon: 'alert-circle' as const, color: COLORS.warning, label: 'Chưa tập' }
+          : { icon: 'ellipse-outline' as const, color: COLORS.textMuted, label: '' };
+
+  const adaptation =
+    day.adaptation && day.adaptation.action !== 'maintain' ? ACTION_META[day.adaptation.action] : null;
+  const substitutions = day.substitutions?.length ?? 0;
 
   return (
     <View style={styles.row}>
-      {/* Timeline */}
       <View style={styles.timeline}>
         <View
           style={[
             styles.dot,
-            (isPast || isCurrentDay) && { backgroundColor: COLORS.primary },
+            (isPast || isCurrent || day.completed) && { backgroundColor: status.color },
+            isCurrent && styles.dotCurrent,
           ]}
         />
-
-        {index !== planLength - 1 && (
-          <View
-            style={[
-              styles.line,
-              (isCurrentDay) && {
-                backgroundColor: COLORS.primary,
-              },
-            ]}
-          />
-        )}
+        {!isLast ? <View style={[styles.line, isPast && styles.linePast]} /> : null}
       </View>
 
-      {/* Card */}
-      <TouchableOpacity style={styles.dayCard} onPress={onPress}>
-        <Image
-          source={{ uri: isRest ? REST_IMAGE : WORKOUT_IMAGE }}
-          style={styles.banner}
-        />
-
-        <View style={styles.cardContent}>
-          <View style={styles.cardHeaderRow}>
-            <View>
+      <TouchableOpacity
+        style={[styles.dayCard, isCurrent && styles.dayCardCurrent]}
+        onPress={() => onPress(day.day)}
+        activeOpacity={0.8}
+      >
+        <View style={styles.dayRow}>
+          <Image source={{ uri: isRest ? REST_IMAGE : WORKOUT_IMAGE }} style={styles.thumb} />
+          <View style={styles.flex1}>
+            <View style={styles.dayTitleRow}>
               <Text style={styles.dayTitle}>{DAY_NAMES(day.day)}</Text>
-
-              {isRest ? (
-                <Text style={styles.restText}>Ngày nghỉ</Text>
-              ) : (
-                <Text style={styles.meta}>
-                  {day.totalDuration} phút | {day.estimatedCalories} kcal
-                </Text>
-              )}
+              <Text style={styles.dayDate}>{formatShortDate(day.date)}</Text>
             </View>
-
-            <Ionicons
-              name={statusIcon as any}
-              size={28}
-              color={statusColor}
-            />
+            {isRest ? (
+              <Text style={styles.dayMeta}>Ngày nghỉ · phục hồi</Text>
+            ) : (
+              <>
+                <Text style={styles.dayFocus} numberOfLines={1}>
+                  {FOCUS_LABEL[day.focus] ?? day.focus}
+                </Text>
+                <Text style={styles.dayMeta} numberOfLines={1}>
+                  {day.exerciseDetails?.length ?? 0} bài · {day.totalDuration} phút · {day.estimatedCalories} kcal
+                </Text>
+              </>
+            )}
           </View>
-
-          {isCurrentDay && !isRest && (
-            <TouchableOpacity style={styles.startBtnBig} onPress={onStart}>
-              <Text style={styles.startTextBig}>BẮT ĐẦU NGAY</Text>
-            </TouchableOpacity>
-          )}
+          <Ionicons name={status.icon} size={26} color={status.color} />
         </View>
+
+        {adaptation || substitutions ? (
+          <View style={styles.badgeRow}>
+            {adaptation ? <Badge label={adaptation.label} tone={adaptation.tone} icon={adaptation.icon} /> : null}
+            {substitutions ? (
+              <Badge label={`Đã đổi ${substitutions} bài`} tone="info" icon="swap-horizontal" />
+            ) : null}
+          </View>
+        ) : null}
+
+        {adaptation && day.adaptation?.reasons?.[0] ? (
+          <Text style={styles.reason} numberOfLines={2}>
+            {day.adaptation.reasons[0]}
+          </Text>
+        ) : null}
+
+        {isCurrent && !isRest && !day.completed ? (
+          <Button
+            title="Bắt đầu ngay"
+            icon="play"
+            size="sm"
+            onPress={() => onPress(day.day)}
+            style={styles.startBtn}
+          />
+        ) : null}
       </TouchableOpacity>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  text: { marginTop: 10, color: COLORS.textSecondary },
-  errorText: { color: COLORS.error, marginTop: 10 },
-  retryBtn: {
-    marginTop: 16,
-    padding: 10,
-    backgroundColor: COLORS.primary,
-    borderRadius: 8,
-  },
-  retryText: { color: '#fff' },
+  flex1: { flex: 1, minWidth: 0 },
 
-  cardHeaderRow: {
+  summaryRow: { flexDirection: 'row', gap: SPACING.sm + 4, marginTop: SPACING.sm },
+  summaryItem: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-
-  header: { marginBottom: 20 },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: SPACING.xs,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.lg,
-  },
-
-  content: { padding: 10 },
-  dayName: { fontWeight: '600' },
-  restText: {
-    color: COLORS.textMuted,
-    fontStyle: 'italic',
-  },
-
-  startBtn: {
-    marginTop: 8,
-    backgroundColor: COLORS.primary,
-    padding: 6,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  startText: { color: '#fff', fontSize: 12 },
-
-  list: {
-    marginTop: 10,
-  },
-
-  row: {
-    flexDirection: 'row',
-    marginBottom: 20,
-  },
-
-  /* Timeline */
-  timeline: {
-    width: 30,
-    alignItems: 'center',
-  },
-
-  dot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: COLORS.border,
-  },
-
-  line: {
-    width: 2,
-    flex: 1,
-    backgroundColor: COLORS.border,
-    marginTop: 2,
-  },
-
-  /* Card */
-  dayCard: {
-    flex: 1,
+    gap: SPACING.sm,
     backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    overflow: 'hidden',
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.sm + 4,
     ...SHADOWS.sm,
   },
+  summaryLabel: { ...TYPOGRAPHY.small, color: COLORS.textMuted },
+  summaryValue: { ...TYPOGRAPHY.bodyStrong, color: COLORS.text },
 
-  banner: {
-    width: '100%',
-    height: 140,
-  },
+  row: { flexDirection: 'row', gap: SPACING.sm + 4 },
+  timeline: { width: 14, alignItems: 'center', paddingTop: SPACING.md + 6 },
+  dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: COLORS.border },
+  dotCurrent: { width: 14, height: 14, borderRadius: 7, borderWidth: 3, borderColor: COLORS.primarySoft },
+  line: { width: 2, flex: 1, backgroundColor: COLORS.border, marginTop: 4 },
+  linePast: { backgroundColor: COLORS.primarySoft },
 
-  doneBadge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    backgroundColor: COLORS.primary,
-    borderRadius: 20,
-    padding: 6,
+  dayCard: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.sm + 4,
+    marginBottom: SPACING.sm + 4,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    ...SHADOWS.sm,
   },
-
-  cardContent: {
-    padding: 16,
-  },
-
-  dayTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-
-  meta: {
-    color: COLORS.textMuted,
-  },
-
-  startBtnBig: {
-    marginTop: 12,
-    backgroundColor: COLORS.primary,
-    paddingVertical: 14,
-    borderRadius: 30,
-    alignItems: 'center',
-  },
-
-  startTextBig: {
-    color: '#fff',
-    fontWeight: '700',
-  },
+  dayCardCurrent: { borderColor: COLORS.primary },
+  dayRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm + 4 },
+  thumb: { width: 52, height: 52, borderRadius: BORDER_RADIUS.md, backgroundColor: COLORS.surfaceMuted },
+  dayTitleRow: { flexDirection: 'row', alignItems: 'baseline', gap: SPACING.sm },
+  dayTitle: { ...TYPOGRAPHY.h3, color: COLORS.text },
+  dayDate: { ...TYPOGRAPHY.small, color: COLORS.textMuted },
+  dayFocus: { ...TYPOGRAPHY.caption, color: COLORS.text, marginTop: 2 },
+  dayMeta: { ...TYPOGRAPHY.small, color: COLORS.textSecondary, marginTop: 2 },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: SPACING.sm + 2 },
+  reason: { ...TYPOGRAPHY.small, color: COLORS.textSecondary, marginTop: 6 },
+  startBtn: { marginTop: SPACING.sm + 4 },
 });

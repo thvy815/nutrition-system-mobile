@@ -1,696 +1,776 @@
-import React, { useRef, useState } from 'react';
+/**
+ * FoodAnalysisScreen
+ *  - Quét ảnh: nhận diện NHIỀU món (Gemini) -> phân tích dinh dưỡng từng món
+ *    (CSDL công thức trước, không có thì AI ước tính nguyên liệu + map dinh dưỡng).
+ *  - Công thức: dán công thức -> AI trích nguyên liệu -> map dinh dưỡng.
+ */
+import React, { memo, useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
+  ActivityIndicator,
+  Alert,
   Image,
+  StyleSheet,
+  Text,
   TextInput,
   TouchableOpacity,
-  Alert,
+  View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { Card, ScreenContainer } from '../components';
-import { COLORS, SPACING } from '../constants/theme';
-import type { FoodAnalysisResult, RecipeAnalysisResult } from '../types';
-import { detectRecipe, Recipe, searchRecipesByIngredient, getIngredientsAndInstructionsInAi, findIngredientsByAi, Ingredient, getMappingIngredients, MappedIngredient } from '../services/recipe';
+
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Notice,
+  ScreenContainer,
+  ScreenHeader,
+  SectionHeader,
+  Segmented,
+} from '../components';
+import { BORDER_RADIUS, COLORS, METRIC_COLORS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import {
+  detectFoods,
+  findIngredientsByAi,
+  getIngredientsAndInstructionsInAi,
+  getMappingIngredients,
+  Ingredient,
+  MappedIngredient,
+  searchRecipesByIngredient,
+} from '../services/recipe';
+import { getErrorMessage } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { ActivityIndicator } from 'react-native';
 
 type InputMode = 'image' | 'recipe';
 
+type Nutri = { calories: number; protein: number; carbs: number; fat: number };
+
+type DishResult = {
+  source: 'db' | 'ai';
+  recipeName?: string;
+  ingredients: Ingredient[];
+  nutrition: Nutri | null;
+  servings?: number;
+  /** true khi dinh dưỡng là của cả công thức (CSDL không có số khẩu phần). */
+  wholeRecipe?: boolean;
+};
+
+type DishState = {
+  name: string;
+  status: 'loading' | 'done' | 'error';
+  selected: boolean;
+  result?: DishResult;
+  error?: string;
+};
+
+const ZERO: Nutri = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+
+/* ------------------------------------------------------------------ */
+/* Nutrition helpers                                                    */
+/* ------------------------------------------------------------------ */
+
+function round(n: Nutri): Nutri {
+  return {
+    calories: Math.round(n.calories),
+    protein: Number(n.protein.toFixed(1)),
+    carbs: Number(n.carbs.toFixed(1)),
+    fat: Number(n.fat.toFixed(1)),
+  };
+}
+
+/** Dinh dưỡng trong DB tính trên 100g -> nhân theo lượng nguyên liệu. */
+function sumMapped(mapped: (MappedIngredient | undefined)[], original: Ingredient[]): Nutri | null {
+  if (!mapped.length || mapped.every((m) => !m)) return null;
+  const total = mapped.reduce<Nutri>((acc, ing, i) => {
+    if (!ing?.nutrition) return acc;
+    const amount = original[i]?.quantity?.amount || original[i]?.quantity?.originalAmount || 100;
+    const factor = amount / 100;
+    acc.calories += (ing.nutrition.calories || 0) * factor;
+    acc.protein += (ing.nutrition.protein || 0) * factor;
+    acc.carbs += (ing.nutrition.carbs || 0) * factor;
+    acc.fat += (ing.nutrition.fat || 0) * factor;
+    return acc;
+  }, { ...ZERO });
+  return round(total);
+}
+
+async function mapNutrition(ingredients: Ingredient[], token: string): Promise<Nutri | null> {
+  if (!ingredients.length) return null;
+  try {
+    const mapped = await getMappingIngredients(
+      ingredients.map((i) => ({ name: i.name })),
+      1,
+      token
+    );
+    return sumMapped(mapped, ingredients);
+  } catch {
+    // search-service không chạy -> vẫn trả nguyên liệu, chỉ thiếu dinh dưỡng.
+    return null;
+  }
+}
+
+async function analyzeDish(name: string, token: string): Promise<DishResult> {
+  const search = await searchRecipesByIngredient({ keyword: name, token, page: 1, limit: 5 }).catch(
+    () => ({ recipes: [] as any[] })
+  );
+  const recipe = search.recipes?.[0];
+
+  if (recipe) {
+    // Ưu tiên số liệu/khẩu phần; nếu chỉ có tổng công thức thì chia cho số khẩu phần.
+    const perServing = recipe.totalNutritionPerServing?.calories != null;
+    const servings = !perServing && recipe.servings && recipe.servings > 1 ? recipe.servings : 1;
+    const raw = perServing ? recipe.totalNutritionPerServing : recipe.totalNutrition;
+    const n = raw
+      ? {
+          calories: (raw.calories ?? 0) / servings,
+          protein: (raw.protein ?? 0) / servings,
+          carbs: (raw.carbs ?? 0) / servings,
+          fat: (raw.fat ?? 0) / servings,
+        }
+      : null;
+    return {
+      source: 'db',
+      recipeName: recipe.name,
+      ingredients: recipe.ingredients ?? [],
+      servings: recipe.servings,
+      wholeRecipe: !perServing && !(recipe.servings && recipe.servings > 1),
+      nutrition: n
+        ? round({
+            calories: n.calories ?? 0,
+            protein: n.protein ?? 0,
+            carbs: n.carbs ?? 0,
+            fat: n.fat ?? 0,
+          })
+        : null,
+    };
+  }
+
+  const ai = await getIngredientsAndInstructionsInAi(name, token);
+  const ingredients = ai?.ingredients ?? [];
+  if (!ingredients.length) throw new Error('Không tìm thấy công thức cho món này');
+
+  return {
+    source: 'ai',
+    recipeName: ai?.name || name,
+    ingredients,
+    servings: ai?.servings,
+    nutrition: await mapNutrition(ingredients, token),
+  };
+}
+
+/** Chạy tối đa `limit` tác vụ song song. */
+async function runPool<T>(items: T[], limit: number, worker: (item: T, idx: number) => Promise<void>) {
+  let next = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      await worker(items[i], i);
+    }
+  });
+  await Promise.all(runners);
+}
+
+/* ------------------------------------------------------------------ */
+/* Screen                                                              */
+/* ------------------------------------------------------------------ */
+
 export function FoodAnalysisScreen() {
   const { token } = useAuth();
-  const [inputMode, setInputMode] = useState<InputMode>('image');
+  const [mode, setMode] = useState<InputMode>('image');
+
+  // Image mode
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [detectError, setDetectError] = useState<string | null>(null);
+  const [dishes, setDishes] = useState<DishState[] | null>(null);
+  const runId = useRef(0);
+
+  // Recipe mode
   const [recipeText, setRecipeText] = useState('');
-  const [detectedName, setDetectedName] = useState<string | null>(null);
+  const [recipeLoading, setRecipeLoading] = useState(false);
+  const [recipeResult, setRecipeResult] = useState<{ ingredients: Ingredient[]; nutrition: Nutri | null } | null>(null);
+  const [recipeError, setRecipeError] = useState<string | null>(null);
 
-  const [imageResult, setImageResult] = useState<Recipe | null>(null);
-  const [ingredientResult, setIngredientResult] = useState<Ingredient[] | null>(null);
-  const [ingMappingResult, setIngMappingResult] = useState<MappedIngredient[] | null>(null);
-  const [totalNutrition, setTotalNutrition] = useState<any>(null);
+  const updateDish = useCallback((id: number, idx: number, patch: Partial<DishState>) => {
+    if (id !== runId.current) return; // bỏ kết quả của ảnh cũ
+    setDishes((prev) => (prev ? prev.map((d, i) => (i === idx ? { ...d, ...patch } : d)) : prev));
+  }, []);
 
-  // Hàm dọn dẹp sạch sẽ toàn bộ kết quả phân tích
-  const resetAllResults = () => {
-    setImageResult(null);
-    setIngredientResult(null);
-    setIngMappingResult(null);
-    setTotalNutrition(null);
-    setDetectedName(null);
-  };
-
-  const handleMapping = async (ingredients: { name: string }[]) => {
-    if (!token || !ingredients || ingredients.length === 0) return null;
-    setLoading(true);
-    try {
-      const result = await getMappingIngredients(ingredients, 1, token);
-      return result;
-    } catch (err) {
-      console.error('Mapping error:', err);
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Hàm dùng chung để tính toán tổng dinh dưỡng từ mảng đã được Mapping
-  // Truyền thêm mảng nguyên liệu gốc (originalIngredients) vào hàm
-  const calculateAndSetTotalNutrition = (
-    mappedList: MappedIngredient[],
-    originalIngredients: any[]
-  ) => {
-    if (mappedList && mappedList.length > 0) {
-      const totalNutri = mappedList.reduce((acc, ing, index) => {
-        // Lấy lượng weight/amount từ mảng nguyên liệu gốc tương ứng cùng index
-        // Phòng hờ nếu không có amount thì mặc định là 1 (hoặc chia cho 100 nếu DB của bạn tính theo 100g)
-        const amount = originalIngredients[index]?.quantity?.amount || 1;
-        console.log(`Ingredient Mapping name: ${ing.name}, Amount: ${amount}, Ingredient name:`, originalIngredients[index]?.namer);
-        // Nếu DB của bạn lưu dinh dưỡng tính trên mỗi 100g, bạn cần chia cho 100:
-        // const factor = amount / 100;
-        // Nếu DB lưu sẵn dinh dưỡng cho đúng 1 đơn vị định lượng (1g, 1 quả, v.v.), thì giữ nguyên factor = amount:
-        const factor = amount / 100;
-
-        acc.calories += (ing.nutrition?.calories || 0) * factor;
-        acc.protein += (ing.nutrition?.protein || 0) * factor;
-        acc.carbs += (ing.nutrition?.carbs || 0) * factor;
-        acc.fat += (ing.nutrition?.fat || 0) * factor;
-        return acc;
-      }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
-
-      // Làm tròn số cho đẹp mắt (ví dụ: 12.34g đạm thay vì 12.33333333g)
-      setTotalNutrition({
-        calories: Math.round(totalNutri.calories),
-        protein: Number(totalNutri.protein.toFixed(1)),
-        carbs: Number(totalNutri.carbs.toFixed(1)),
-        fat: Number(totalNutri.fat.toFixed(1)),
-      });
-    }
-  };
-
-  const handleDetectRecipe = async (imageAsset: any) => {
-    resetAllResults(); // Xóa sạch kết quả cũ trước khi nạp cái mới
-    if (!token) return;
-    setLoading(true);
-    try {
-      const detectRes = await detectRecipe(imageAsset, token);
-
-      if (detectRes.success) {
-        let foodName = detectRes.detectedFoodName;
-        setDetectedName(foodName);
-
+  const analyzeAll = useCallback(
+    async (names: string[], id: number) => {
+      if (!token) return;
+      await runPool(names, 2, async (name, idx) => {
         try {
-          const searchRes = await searchRecipesByIngredient({
-            keyword: foodName,
-            token,
-            page: 1,
-            limit: 20
-          });
-
-          if (searchRes.recipes.length === 0) {
-            const aiRes = await getIngredientsAndInstructionsInAi(foodName, token);
-            const ingList = aiRes?.ingredients || [];
-            const nameIngList = ingList.map((ing: any) => ({ name: ing.name }));
-
-            const tempMapping = await handleMapping(nameIngList);
-            if (tempMapping) {
-              calculateAndSetTotalNutrition(tempMapping, ingList);
-              setIngMappingResult(tempMapping);
-            }
-            setImageResult(aiRes);
-          } else {
-            setImageResult(searchRes.recipes[0]);
-          }
-        } catch (err) {
-          console.error('Search error:', err);
-        } finally {
-          setLoading(false);
+          const result = await analyzeDish(name, token);
+          updateDish(id, idx, { status: 'done', result });
+        } catch (err: any) {
+          updateDish(id, idx, { status: 'error', error: err?.message || getErrorMessage(err) });
         }
-      } else {
-        Alert.alert('Thông báo', 'Không nhận diện được món ăn trong ảnh.');
-      }
-    } catch (error: any) {
-      console.error("API Error Detail:", error.response?.data || error.message);
-      Alert.alert('Lỗi', 'Máy chủ không nhận được file ảnh hợp lệ.');
-    } finally {
-      setLoading(false);
-    }
-  };
+      });
+    },
+    [token, updateDish]
+  );
 
-  const handleAnalyzeRecipe = async () => {
+  const retryDish = useCallback(
+    async (idx: number) => {
+      if (!token || !dishes) return;
+      const id = runId.current;
+      updateDish(id, idx, { status: 'loading', error: undefined });
+      try {
+        const result = await analyzeDish(dishes[idx].name, token);
+        updateDish(id, idx, { status: 'done', result });
+      } catch (err: any) {
+        updateDish(id, idx, { status: 'error', error: err?.message || getErrorMessage(err) });
+      }
+    },
+    [token, dishes, updateDish]
+  );
+
+  const toggleDish = useCallback((idx: number) => {
+    setDishes((prev) => (prev ? prev.map((d, i) => (i === idx ? { ...d, selected: !d.selected } : d)) : prev));
+  }, []);
+
+  const handleDetect = useCallback(
+    async (asset: ImagePicker.ImagePickerAsset) => {
+      const id = ++runId.current;
+      setDishes(null);
+      setDetectError(null);
+      setDetecting(true);
+      try {
+        const names = await detectFoods(asset);
+        if (id !== runId.current) return;
+        if (!names.length) {
+          setDishes([]);
+          return;
+        }
+        setDishes(names.map((name) => ({ name, status: 'loading', selected: true })));
+        setDetecting(false);
+        analyzeAll(names, id);
+      } catch (err) {
+        if (id !== runId.current) return;
+        setDetectError(getErrorMessage(err, 'Không nhận diện được món ăn trong ảnh.'));
+      } finally {
+        if (id === runId.current) setDetecting(false);
+      }
+    },
+    [analyzeAll]
+  );
+
+  const pickImage = useCallback(
+    async (useCamera: boolean) => {
+      try {
+        const perm = useCamera
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (perm.status !== 'granted') {
+          Alert.alert(
+            'Cần cấp quyền',
+            useCamera
+              ? 'Bạn cần cấp quyền camera để chụp ảnh món ăn.'
+              : 'Bạn cần cấp quyền thư viện để chọn ảnh.'
+          );
+          return;
+        }
+        const options: ImagePicker.ImagePickerOptions = {
+          mediaTypes: 'images',
+          allowsEditing: true,
+          aspect: [4, 3],
+          quality: 0.7,
+        };
+        const result = useCamera
+          ? await ImagePicker.launchCameraAsync(options)
+          : await ImagePicker.launchImageLibraryAsync(options);
+
+        if (!result.canceled && result.assets[0]) {
+          setImageUri(result.assets[0].uri);
+          handleDetect(result.assets[0]);
+        }
+      } catch {
+        Alert.alert('Lỗi', 'Không thể chọn ảnh. Vui lòng thử lại.');
+      }
+    },
+    [handleDetect]
+  );
+
+  const handleAnalyzeRecipe = useCallback(async () => {
     if (!token || !recipeText.trim()) return;
-    resetAllResults(); // Xóa sạch kết quả cũ
-    setLoading(true);
-
+    setRecipeLoading(true);
+    setRecipeError(null);
+    setRecipeResult(null);
     try {
-      const resIngredients = await findIngredientsByAi(recipeText, token);
-      setIngredientResult(resIngredients);
-
-      // SỬA LỖI SỐ 3: Tiến hành mapping dinh dưỡng luôn cho chế độ nhập chữ
-      if (resIngredients && resIngredients.length > 0) {
-        const nameIngList = resIngredients.map((ing: any) => ({ name: ing.name }));
-        const tempMapping = await handleMapping(nameIngList);
-        if (tempMapping) {
-          calculateAndSetTotalNutrition(tempMapping, resIngredients);
-          setIngMappingResult(tempMapping);
-        }
+      const ingredients = (await findIngredientsByAi(recipeText, token)) ?? [];
+      if (!ingredients.length) {
+        setRecipeError('Không tìm thấy nguyên liệu trong nội dung bạn nhập.');
+        return;
       }
+      const nutrition = await mapNutrition(ingredients, token);
+      setRecipeResult({ ingredients, nutrition });
     } catch (err) {
-      console.error('Analyze recipe error:', err);
+      setRecipeError(getErrorMessage(err, 'Không phân tích được công thức.'));
     } finally {
-      setLoading(false);
+      setRecipeLoading(false);
     }
-  };
+  }, [recipeText, token]);
 
-  const handleSwitchMode = (mode: InputMode) => {
-    setInputMode(mode);
-    resetAllResults(); // SỬA LỖI SỐ 2: Đổi chế độ là dọn sạch bách dữ liệu chế độ cũ
-    if (mode === 'image') {
-      setRecipeText('');
-    } else {
-      setImageUri(null);
-    }
-  };
+  const switchMode = useCallback((m: InputMode) => {
+    setMode(m);
+    runId.current++;
+    setDishes(null);
+    setDetectError(null);
+    setDetecting(false);
+    setImageUri(null);
+    setRecipeResult(null);
+    setRecipeError(null);
+  }, []);
 
-  // ... Các hàm xin quyền và pickImage giữ nguyên ...
+  /* ------- derived ------- */
 
-  const pickImage = async (useCamera: boolean) => {
-    try {
-      if (useCamera) {
-        // Xin quyền camera
-        const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
-        if (cameraPermission.status !== 'granted') {
-          Alert.alert('Lỗi', 'Bạn cần cấp quyền truy cập camera để chụp ảnh.');
-          return;
-        }
-      } else {
-        // Xin quyền thư viện ảnh
-        const libraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (libraryPermission.status !== 'granted') {
-          Alert.alert('Lỗi', 'Bạn cần cấp quyền truy cập thư viện để chọn ảnh.');
-          return;
-        }
-      }
+  const total = useMemo(() => {
+    if (!dishes) return null;
+    const chosen = dishes.filter((d) => d.selected && d.status === 'done' && d.result?.nutrition);
+    if (!chosen.length) return null;
+    return {
+      count: chosen.length,
+      nutri: round(
+        chosen.reduce<Nutri>((acc, d) => {
+          const n = d.result!.nutrition!;
+          return {
+            calories: acc.calories + n.calories,
+            protein: acc.protein + n.protein,
+            carbs: acc.carbs + n.carbs,
+            fat: acc.fat + n.fat,
+          };
+        }, { ...ZERO })
+      ),
+    };
+  }, [dishes]);
 
-      const result = useCamera
-        ? await ImagePicker.launchCameraAsync({
-          mediaTypes: 'images',
-          allowsEditing: true,
-          aspect: [4, 3],
-          quality: 0.8,
-        })
-        : await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: 'images',
-          allowsEditing: true,
-          aspect: [4, 3],
-          quality: 0.8,
-        });
-
-      if (!result.canceled) {
-        const imageAsset = result.assets[0];
-        setImageUri(imageAsset.uri);
-
-        // Gọi hàm nhận diện ngay khi chọn ảnh xong
-        handleDetectRecipe(imageAsset);
-      }
-    } catch (error) {
-      Alert.alert('Lỗi', 'Không thể chọn ảnh. Vui lòng thử lại.');
-    }
-  };
-
-  const hasResult = imageResult || ingredientResult;
+  const pending = dishes?.filter((d) => d.status === 'loading').length ?? 0;
 
   return (
-    <ScreenContainer keyboardAvoiding>
-      <Text style={styles.title}>Phân tích món ăn</Text>
-      <Text style={styles.subtitle}>
-        Quét ảnh hoặc nhập công thức để xem thông tin dinh dưỡng
-      </Text>
+    <ScreenContainer
+      keyboardAvoiding
+      header={<ScreenHeader title="Phân tích món ăn" subtitle="Chụp ảnh bữa ăn hoặc dán công thức để xem dinh dưỡng" />}
+    >
+      <Segmented
+        value={mode}
+        onChange={switchMode}
+        options={[
+          { value: 'image', label: 'Quét ảnh', icon: 'camera' },
+          { value: 'recipe', label: 'Công thức', icon: 'document-text' },
+        ]}
+      />
 
-      {/* Mode Toggle */}
-      <View style={styles.modeToggle}>
-        <TouchableOpacity
-          style={[styles.modeButton, inputMode === 'image' && styles.modeButtonActive]}
-          onPress={() => handleSwitchMode('image')}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name="camera"
-            size={22}
-            color={inputMode === 'image' ? '#FFF' : COLORS.textSecondary}
-          />
-          <Text style={[styles.modeButtonText, inputMode === 'image' && styles.modeButtonTextActive]}>
-            Quét ảnh
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.modeButton, inputMode === 'recipe' && styles.modeButtonActive]}
-          onPress={() => handleSwitchMode('recipe')}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name="document-text"
-            size={22}
-            color={inputMode === 'recipe' ? '#FFF' : COLORS.textSecondary}
-          />
-          <Text style={[styles.modeButtonText, inputMode === 'recipe' && styles.modeButtonTextActive]}>
-            Công thức
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Input Area */}
-      {inputMode === 'image' ? (
-        <View style={styles.inputSection}>
-          <View style={styles.pickerRow}>
-            <TouchableOpacity
-              style={[styles.pickerButton, loading && { opacity: 0.5 }]}
-              onPress={() => pickImage(false)}
-              disabled={loading}
-            >
-              <Ionicons name="images" size={28} color={COLORS.primary} />
-              <Text style={styles.pickerButtonText}>Thư viện</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.pickerButton, loading && { opacity: 0.5 }]}
-              onPress={() => pickImage(true)}
-              disabled={loading}
-            >
-              <Ionicons name="camera" size={28} color={COLORS.primary} />
-              <Text style={styles.pickerButtonText}>Chụp ảnh</Text>
-            </TouchableOpacity>
-          </View>
-
-          {imageUri && (
-            <Card style={styles.previewCard}>
+      {mode === 'image' ? (
+        <>
+          {imageUri ? (
+            <View style={styles.preview}>
               <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="cover" />
-              {loading && (
-                <View style={styles.loadingOverlay}>
-                  <ActivityIndicator size="large" color={COLORS.primary} />
-                  <Text style={styles.loadingText}>Đang nhận diện món ăn...</Text>
+              {detecting ? (
+                <View style={styles.previewOverlay}>
+                  <ActivityIndicator size="large" color={COLORS.textInverse} />
+                  <Text style={styles.previewOverlayText}>Đang nhận diện các món ăn...</Text>
                 </View>
-              )}
-            </Card>
-          )}
-
-          {detectedName && !loading && imageUri && (
-            <View style={styles.resultBrief}>
-              <Text style={styles.detectedText}>
-                Kết quả nhận diện: <Text style={{ fontWeight: 'bold' }}>{detectedName}</Text>
+              ) : null}
+            </View>
+          ) : (
+            <View style={styles.dropzone}>
+              <View style={styles.dropIcon}>
+                <Ionicons name="restaurant" size={30} color={COLORS.primary} />
+              </View>
+              <Text style={styles.dropTitle}>Chụp cả mâm cơm cũng được</Text>
+              <Text style={styles.dropText}>
+                AI sẽ nhận diện từng món trong ảnh và ước tính dinh dưỡng cho mỗi món.
               </Text>
             </View>
           )}
-        </View>) : (
-        <Card style={styles.recipeInputCard}>
-          <TextInput
-            style={styles.recipeInput}
-            placeholder="Dán công thức hoặc danh sách nguyên liệu vào đây..."
-            placeholderTextColor={COLORS.textMuted}
-            multiline
-            numberOfLines={5}
-            value={recipeText}
-            onChangeText={setRecipeText}
-            textAlignVertical="top"
-          />
-          <TouchableOpacity
-            style={[
-              styles.analyzeButton,
-              (!recipeText.trim() || loading) && styles.analyzeButtonDisabled
-            ]}
-            onPress={handleAnalyzeRecipe}
-            disabled={!recipeText.trim() || loading}
-            activeOpacity={0.8}
-          >
-            {loading && !hasResult ? (
-              <>
-                <ActivityIndicator size="small" color="#FFF" />
-                <Text style={styles.analyzeButtonText}>Đang phân tích...</Text>
-              </>
-            ) : (
-              <>
-                <Ionicons name="analytics" size={20} color="#FFF" />
-                <Text style={styles.analyzeButtonText}>Phân tích</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </Card>
-      )}
 
-      {/* Results */}
-      {hasResult && (
-        <View style={styles.resultsSection}>
-          {ingredientResult && !loading && (
+          <View style={styles.pickRow}>
+            <Button
+              title="Thư viện"
+              icon="images"
+              variant="outline"
+              onPress={() => pickImage(false)}
+              disabled={detecting}
+              style={styles.flex1}
+            />
+            <Button
+              title={imageUri ? 'Chụp lại' : 'Chụp ảnh'}
+              icon="camera"
+              onPress={() => pickImage(true)}
+              disabled={detecting}
+              style={styles.flex1}
+            />
+          </View>
+
+          {detectError ? <Notice tone="error" message={detectError} style={styles.mt16} /> : null}
+
+          {dishes && dishes.length === 0 ? (
+            <EmptyState
+              icon="sad-outline"
+              title="Không nhận diện được món nào"
+              message="Hãy chụp gần hơn, đủ sáng và để món ăn chiếm phần lớn khung hình."
+            />
+          ) : null}
+
+          {dishes && dishes.length > 0 ? (
             <>
-              <Text style={styles.sectionTitle}>Nguyên liệu</Text>
-              {ingredientResult?.map((ing, i) => (
-                <Card key={i} style={styles.ingredientCard}>
-                  <Text style={styles.ingredientName}>{ing.name}</Text>
-                  <View style={styles.ingredientMacros}>
-                    <Text style={styles.macroText}>{ing.quantity.amount || ing.quantity.originalAmount} {ing.quantity.unit || ing.quantity.originalUnit}</Text>
-                  </View>
-                </Card>
+              <SectionHeader
+                title={`Nhận diện được ${dishes.length} món`}
+                icon="sparkles-outline"
+              />
+              <View style={styles.chipRow}>
+                {dishes.map((d, i) => (
+                  <Badge key={`${d.name}-${i}`} label={d.name} tone={d.selected ? 'success' : 'neutral'} />
+                ))}
+              </View>
+
+              <TotalCard total={total} pending={pending} dishCount={dishes.length} />
+
+              {dishes.map((d, i) => (
+                <DishCard key={`${d.name}-${i}`} index={i} dish={d} onToggle={toggleDish} onRetry={retryDish} />
               ))}
 
-              {
-                ingMappingResult && (
-                  <Card style={styles.resultCard}>
-                    <Text style={styles.resultLabel}>Nguyên liệu dùng để tính dinh dưỡng</Text>
-                    {ingMappingResult.map((ing, i) => (
-                      <Card key={i} style={styles.ingredientCard}>
-                        <Text style={styles.ingredientName}>{ing.name}</Text>
-                        <View style={styles.ingredientMacros}>
-                          <Text style={styles.macroText}>Calo: {ing.nutrition?.calories}kCal</Text>
-                          <Text style={styles.macroText}>Pro: {ing.nutrition?.protein}g</Text>
-                          <Text style={styles.macroText}>Carb: {ing.nutrition?.carbs}g</Text>
-                          <Text style={styles.macroText}>Fat: {ing.nutrition?.fat}g</Text>
-                        </View>
-                      </Card>
-                    ))}
-                  </Card>
-                )
-              }
-
+              <Text style={styles.footnote}>
+                Giá trị dinh dưỡng là ước tính cho 1 khẩu phần, có thể khác với thực tế.
+              </Text>
             </>
-          )}
+          ) : null}
+        </>
+      ) : (
+        <>
+          <Card style={styles.mt16}>
+            <TextInput
+              style={styles.recipeInput}
+              placeholder={'Ví dụ:\n200g ức gà\n1 chén cơm trắng\n100g bông cải xanh, 1 muỗng dầu ô liu'}
+              placeholderTextColor={COLORS.textMuted}
+              multiline
+              value={recipeText}
+              onChangeText={setRecipeText}
+              textAlignVertical="top"
+              maxLength={3000}
+            />
+            <Button
+              title={recipeLoading ? 'Đang phân tích...' : 'Phân tích'}
+              icon="analytics"
+              onPress={handleAnalyzeRecipe}
+              loading={recipeLoading}
+              disabled={!recipeText.trim()}
+              fullWidth
+              style={styles.mt12}
+            />
+          </Card>
 
-          {imageResult && (
+          {recipeError ? <Notice tone="error" message={recipeError} style={styles.mt16} /> : null}
+
+          {recipeResult ? (
             <>
-              <Card style={styles.resultCard}>
-                <Text style={styles.resultLabel}>Nguyên liệu dự kiến</Text>
-                {imageResult.ingredients.map((ing, i) => (
-                  <Card key={i} style={styles.ingredientCard}>
-                    {/* Thẻ Text cha bọc ngoài giúp name và amount nằm chung 1 hàng liền mạch */}
-                    <Text style={styles.ingredientName}>
-                      {ing.name}{' - '}
-                      <Text style={styles.macroText}>
-                        {ing.quantity.amount || ing.quantity.originalAmount}{' '}
-                        {ing.quantity.unit || ing.quantity.originalUnit}
-                      </Text>
-                    </Text>
-                  </Card>
-                ))}
+              {recipeResult.nutrition ? (
+                <>
+                  <SectionHeader title="Tổng dinh dưỡng" icon="pie-chart-outline" />
+                  <NutritionGrid n={recipeResult.nutrition} />
+                </>
+              ) : (
+                <Notice
+                  tone="warning"
+                  style={styles.mt16}
+                  message="Chưa tính được dinh dưỡng (dịch vụ tra cứu nguyên liệu không phản hồi)."
+                />
+              )}
+              <SectionHeader title={`Nguyên liệu (${recipeResult.ingredients.length})`} icon="list-outline" />
+              <Card>
+                <IngredientList items={recipeResult.ingredients} />
               </Card>
-
-              {totalNutrition ? (
-                <NutritionSummaryCard
-                  calories={totalNutrition.calories}
-                  protein={totalNutrition.protein}
-                  carbs={totalNutrition.carbs}
-                  fat={totalNutrition.fat}
-                />
-              ) : (imageResult.totalNutritionPerServing || imageResult.totalNutrition) ? (
-                <NutritionSummaryCard
-                  calories={imageResult.totalNutrition?.calories || imageResult.totalNutritionPerServing?.calories || 0}
-                  protein={imageResult.totalNutrition?.protein || imageResult.totalNutritionPerServing?.protein || 0}
-                  carbs={imageResult.totalNutrition?.carbs || imageResult.totalNutritionPerServing?.carbs || 0}
-                  fat={imageResult.totalNutrition?.fat || imageResult.totalNutritionPerServing?.fat || 0}
-                />
-              ) : null}
-              {
-                ingMappingResult && (
-                  <Card style={styles.resultCard}>
-                    <Text style={styles.resultLabel}>Nguyên liệu dùng để tính dinh dưỡng</Text>
-                    {ingMappingResult.map((ing, i) => (
-                      <Card key={i} style={styles.ingredientCard}>
-                        <Text style={styles.ingredientName}>{ing.name}</Text>
-                        <View style={styles.ingredientMacros}>
-                          <Text style={styles.macroText}>{ing.nutrition?.calories} kcal</Text>
-                          <Text style={styles.macroText}>Pro: {ing.nutrition?.protein}g</Text>
-                          <Text style={styles.macroText}>Carb: {ing.nutrition?.carbs}g</Text>
-                          <Text style={styles.macroText}>Fat: {ing.nutrition?.fat}g</Text>
-                        </View>
-                      </Card>
-                    ))}
-                  </Card>
-                )
-              }
-
             </>
-          )}
-
-
-
-        </View>
+          ) : null}
+        </>
       )}
     </ScreenContainer>
   );
 }
 
-function NutritionSummaryCard({
-  calories,
-  protein,
-  carbs,
-  fat,
+/* ------------------------------------------------------------------ */
+/* Sub components                                                      */
+/* ------------------------------------------------------------------ */
+
+const NutritionGrid = memo(function NutritionGrid({ n, compact }: { n: Nutri; compact?: boolean }) {
+  const items = [
+    { label: 'Calo', value: `${n.calories}`, unit: 'kcal', color: METRIC_COLORS.calories, icon: 'flame' as const },
+    { label: 'Đạm', value: `${n.protein}`, unit: 'g', color: METRIC_COLORS.protein, icon: 'fitness' as const },
+    { label: 'Tinh bột', value: `${n.carbs}`, unit: 'g', color: METRIC_COLORS.carbs, icon: 'leaf' as const },
+    { label: 'Chất béo', value: `${n.fat}`, unit: 'g', color: METRIC_COLORS.fat, icon: 'water' as const },
+  ];
+  return (
+    <View style={[styles.nutriGrid, compact && styles.nutriGridCompact]}>
+      {items.map((it) => (
+        <View key={it.label} style={[styles.nutriItem, compact && styles.nutriItemCompact]}>
+          {!compact ? <Ionicons name={it.icon} size={18} color={it.color} /> : null}
+          <Text style={[compact ? styles.nutriValueSm : styles.nutriValue, { color: it.color }]} numberOfLines={1}>
+            {it.value}
+            <Text style={styles.nutriUnit}> {it.unit}</Text>
+          </Text>
+          <Text style={styles.nutriLabel}>{it.label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+});
+
+function TotalCard({
+  total,
+  pending,
+  dishCount,
 }: {
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
+  total: { count: number; nutri: Nutri } | null;
+  pending: number;
+  dishCount: number;
 }) {
   return (
-    <Card style={styles.nutritionCard}>
-      <Text style={styles.nutritionTitle}>Tổng dinh dưỡng</Text>
-      <View style={styles.nutritionGrid}>
-        <View style={styles.nutritionItem}>
-          <Ionicons name="flame" size={24} color={COLORS.accent} />
-          <Text style={styles.nutritionValue}>{calories}</Text>
-          <Text style={styles.nutritionLabel}>kcal</Text>
-        </View>
-        <View style={styles.nutritionItem}>
-          <Ionicons name="fitness" size={24} color={COLORS.primary} />
-          <Text style={styles.nutritionValue}>{protein}g</Text>
-          <Text style={styles.nutritionLabel}>Đạm</Text>
-        </View>
-        <View style={styles.nutritionItem}>
-          <Ionicons name="nutrition" size={24} color={COLORS.secondary} />
-          <Text style={styles.nutritionValue}>{carbs}g</Text>
-          <Text style={styles.nutritionLabel}>Tinh bột</Text>
-        </View>
-        <View style={styles.nutritionItem}>
-          <Ionicons name="water" size={24} color={COLORS.accent} />
-          <Text style={styles.nutritionValue}>{fat}g</Text>
-          <Text style={styles.nutritionLabel}>Chất béo</Text>
-        </View>
+    <Card style={styles.totalCard}>
+      <View style={styles.totalHead}>
+        <Text style={styles.totalTitle}>Tổng bữa ăn</Text>
+        {pending ? (
+          <View style={styles.pendingRow}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
+            <Text style={styles.pendingText}>
+              Đang phân tích {dishCount - pending}/{dishCount}
+            </Text>
+          </View>
+        ) : total ? (
+          <Badge label={`${total.count} món`} tone="success" />
+        ) : null}
       </View>
+      {total ? (
+        <NutritionGrid n={total.nutri} />
+      ) : (
+        <Text style={styles.pendingText}>
+          {pending ? 'Kết quả sẽ hiện dần khi từng món được phân tích.' : 'Chưa có món nào có dữ liệu dinh dưỡng.'}
+        </Text>
+      )}
     </Card>
   );
 }
 
+const DishCard = memo(function DishCard({
+  index,
+  dish,
+  onToggle,
+  onRetry,
+}: {
+  index: number;
+  dish: DishState;
+  onToggle: (idx: number) => void;
+  onRetry: (idx: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const r = dish.result;
+
+  return (
+    <View style={[styles.dishCard, !dish.selected && styles.dishCardOff]}>
+      <View style={styles.dishHead}>
+        <TouchableOpacity
+          onPress={() => onToggle(index)}
+          hitSlop={8}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: dish.selected }}
+          accessibilityLabel={`Tính ${dish.name} vào tổng`}
+        >
+          <Ionicons
+            name={dish.selected ? 'checkbox' : 'square-outline'}
+            size={22}
+            color={dish.selected ? COLORS.primary : COLORS.textMuted}
+          />
+        </TouchableOpacity>
+        <View style={styles.flex1}>
+          <Text style={styles.dishName} numberOfLines={2}>
+            {dish.name}
+          </Text>
+          {r?.recipeName && r.recipeName.toLowerCase() !== dish.name.toLowerCase() ? (
+            <Text style={styles.dishSub} numberOfLines={1}>
+              Khớp: {r.recipeName}
+            </Text>
+          ) : null}
+        </View>
+        {dish.status === 'loading' ? (
+          <ActivityIndicator size="small" color={COLORS.primary} />
+        ) : dish.status === 'done' && r ? (
+          <Badge
+            label={r.source === 'db' ? 'CSDL' : 'AI ước tính'}
+            tone={r.source === 'db' ? 'info' : 'purple'}
+          />
+        ) : (
+          <Badge label="Lỗi" tone="error" />
+        )}
+      </View>
+
+      {dish.status === 'error' ? (
+        <View style={styles.dishErrorRow}>
+          <Text style={styles.dishError} numberOfLines={2}>
+            {dish.error}
+          </Text>
+          <Button title="Thử lại" size="sm" variant="outline" icon="refresh" onPress={() => onRetry(index)} />
+        </View>
+      ) : null}
+
+      {dish.status === 'done' && r ? (
+        <>
+          {r.nutrition ? (
+            <>
+              <NutritionGrid n={r.nutrition} compact />
+              {r.wholeRecipe ? (
+                <Text style={styles.dishSub}>Theo cả công thức (CSDL chưa có số khẩu phần)</Text>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.dishSub}>Chưa tính được dinh dưỡng cho món này.</Text>
+          )}
+          {r.ingredients.length ? (
+            <TouchableOpacity style={styles.expand} onPress={() => setOpen((v) => !v)} hitSlop={6}>
+              <Text style={styles.expandText}>
+                {open ? 'Ẩn nguyên liệu' : `Xem ${r.ingredients.length} nguyên liệu`}
+              </Text>
+              <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={14} color={COLORS.primaryDark} />
+            </TouchableOpacity>
+          ) : null}
+          {open ? <IngredientList items={r.ingredients} /> : null}
+        </>
+      ) : null}
+    </View>
+  );
+});
+
+const IngredientList = memo(function IngredientList({ items }: { items: Ingredient[] }) {
+  return (
+    <View>
+      {items.map((ing, i) => {
+        const amount = ing.quantity?.amount || ing.quantity?.originalAmount;
+        const unit = ing.quantity?.unit || ing.quantity?.originalUnit || '';
+        return (
+          <View key={`${ing.name}-${i}`} style={[styles.ingRow, i > 0 && styles.ingDivider]}>
+            <Text style={styles.ingName} numberOfLines={2}>
+              {ing.name}
+            </Text>
+            {amount ? (
+              <Text style={styles.ingAmount}>
+                {amount} {unit}
+              </Text>
+            ) : null}
+          </View>
+        );
+      })}
+    </View>
+  );
+});
+
+/* ------------------------------------------------------------------ */
+
 const styles = StyleSheet.create({
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 12,
-  },
-  loadingText: {
-    marginTop: 10,
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
-  resultBrief: {
+  flex1: { flex: 1, minWidth: 0 },
+  mt12: { marginTop: SPACING.sm + 4 },
+  mt16: { marginTop: SPACING.md },
+
+  dropzone: {
     marginTop: SPACING.md,
-    padding: SPACING.md,
+    alignItems: 'center',
+    padding: SPACING.lg,
+    borderRadius: BORDER_RADIUS.lg,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: COLORS.primary,
     backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary,
   },
-  detectedText: {
-    fontSize: 16,
-    color: COLORS.text,
+  dropIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: COLORS.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.sm + 4,
   },
-  // Đừng quên style cho previewCard nếu chưa có
-  previewCard: {
-    marginTop: SPACING.lg,
-    height: 250,
-    borderRadius: 12,
+  dropTitle: { ...TYPOGRAPHY.h3, color: COLORS.text, textAlign: 'center' },
+  dropText: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary, textAlign: 'center', marginTop: 4 },
+
+  preview: {
+    marginTop: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
     overflow: 'hidden',
-    position: 'relative',
+    aspectRatio: 4 / 3,
+    backgroundColor: COLORS.surfaceMuted,
   },
-  previewImage: {
-    width: '100%',
-    height: '100%',
+  previewImage: { width: '100%', height: '100%' },
+  previewOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: COLORS.overlay,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: SPACING.xs,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.lg,
-  },
-  modeToggle: {
+  previewOverlayText: { ...TYPOGRAPHY.bodyStrong, color: COLORS.textInverse },
+
+  pickRow: { flexDirection: 'row', gap: SPACING.sm + 4, marginTop: SPACING.sm + 4 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: SPACING.sm + 4 },
+
+  totalCard: { marginBottom: SPACING.sm + 4, borderWidth: 1, borderColor: COLORS.primarySoft },
+  totalHead: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.sm + 4,
+    gap: SPACING.sm,
+  },
+  totalTitle: { ...TYPOGRAPHY.h3, color: COLORS.text },
+  pendingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  pendingText: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
+
+  nutriGrid: { flexDirection: 'row', gap: SPACING.sm },
+  nutriGridCompact: { marginTop: SPACING.sm + 4 },
+  nutriItem: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    paddingVertical: SPACING.sm + 2,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.background,
+    gap: 2,
+  },
+  nutriItemCompact: { paddingVertical: SPACING.sm },
+  nutriValue: { ...TYPOGRAPHY.h3 },
+  nutriValueSm: { ...TYPOGRAPHY.bodyStrong },
+  nutriUnit: { ...TYPOGRAPHY.small, color: COLORS.textMuted },
+  nutriLabel: { ...TYPOGRAPHY.small, color: COLORS.textSecondary },
+
+  dishCard: {
     backgroundColor: COLORS.surface,
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: SPACING.lg,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm + 4,
+    ...SHADOWS.sm,
+  },
+  dishCardOff: { opacity: 0.6 },
+  dishHead: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm + 4 },
+  dishName: { ...TYPOGRAPHY.bodyStrong, color: COLORS.text },
+  dishSub: { ...TYPOGRAPHY.small, color: COLORS.textMuted, marginTop: 2 },
+  dishErrorRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.sm },
+  dishError: { ...TYPOGRAPHY.caption, color: COLORS.error, flex: 1 },
+  expand: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: SPACING.sm + 4 },
+  expandText: { ...TYPOGRAPHY.captionStrong, color: COLORS.primaryDark },
+
+  ingRow: { flexDirection: 'row', justifyContent: 'space-between', gap: SPACING.sm, paddingVertical: SPACING.sm },
+  ingDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border },
+  ingName: { ...TYPOGRAPHY.caption, color: COLORS.text, flex: 1 },
+  ingAmount: { ...TYPOGRAPHY.captionStrong, color: COLORS.textSecondary },
+
+  recipeInput: {
+    minHeight: 140,
+    ...TYPOGRAPHY.body,
+    color: COLORS.text,
     borderWidth: 1,
     borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.sm + 4,
+    backgroundColor: COLORS.background,
   },
-  modeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-    paddingVertical: SPACING.md,
-    borderRadius: 10,
-  },
-  modeButtonActive: {
-    backgroundColor: COLORS.primary,
-  },
-  modeButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  modeButtonTextActive: {
-    color: '#FFF',
-  },
-  inputSection: {
-    marginBottom: SPACING.lg,
-  },
-  pickerRow: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-    marginBottom: SPACING.md,
-  },
-  pickerButton: {
-    flex: 1,
-    backgroundColor: COLORS.surface,
-    borderRadius: 14,
-    padding: SPACING.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    borderStyle: 'dashed',
-  },
-  pickerButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: COLORS.primary,
-    marginTop: SPACING.sm,
-  },
-  // previewCard: {
-  //   marginTop: SPACING.sm,
-  //   padding: 0,
-  //   overflow: 'hidden',
-  // },
-  // previewImage: {
-  //   width: '100%',
-  //   height: 180,
-  //   borderRadius: 12,
-  // },
-  recipeInputCard: {
-    marginBottom: SPACING.lg,
-  },
-  recipeInput: {
-    fontSize: 16,
-    color: COLORS.text,
-    minHeight: 100,
-    marginBottom: SPACING.md,
-  },
-  analyzeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-    backgroundColor: COLORS.primary,
-    paddingVertical: SPACING.md,
-    borderRadius: 12,
-  },
-  analyzeButtonDisabled: {
-    backgroundColor: COLORS.textMuted,
-    opacity: 0.6,
-  },
-  analyzeButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFF',
-  },
-  resultsSection: {
-    marginTop: SPACING.sm,
-  },
-  resultCard: {
-    marginBottom: SPACING.md,
-  },
-  resultLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.xs,
-  },
-  resultTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-  ingredientItem: {
-    fontSize: 15,
-    color: COLORS.text,
-    marginBottom: SPACING.xs,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: SPACING.sm,
-  },
-  ingredientCard: {
-    marginBottom: SPACING.sm,
-  },
-  ingredientName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: SPACING.xs,
-  },
-  ingredientMacros: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.md,
-  },
-  macroText: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-  },
-  nutritionCard: {
-    marginTop: SPACING.md,
-    marginBottom: SPACING.xl,
-  },
-  nutritionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: SPACING.md,
-  },
-  nutritionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  nutritionItem: {
-    width: '48%',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
-  nutritionValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginTop: SPACING.xs,
-  },
-  nutritionLabel: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: SPACING.xs,
-  },
+  footnote: { ...TYPOGRAPHY.small, color: COLORS.textMuted, textAlign: 'center', marginTop: SPACING.xs },
 });
